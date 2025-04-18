@@ -190,6 +190,9 @@ EXTENSIONS = {
     "envoy.filters.http.wasm":                          "//source/extensions/filters/http/wasm:config",
     "envoy.filters.http.stateful_session":              "//source/extensions/filters/http/stateful_session:config",
     "envoy.filters.http.header_mutation":               "//source/extensions/filters/http/header_mutation:config",
+    # 注册自己的 hyperscan 插件 
+    # 键名格式必须为 envoy.filters.http.{插件名} 路径必须指向正确的 Bazel 目标（即 BUILD 文件中的 envoy_http_filter 规则）
+    "envoy.filters.http.hyperscan_scanner":             "//source/extensions/filters/http/hyperscan_scanner:config",
 
     #
     # Listener filters

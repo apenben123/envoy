@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package envoy.extensions.filters.http.hyperscan_scanner.v3;
+
+import "udpa/annotations/status.proto";
+
+option java_package = "io.envoyproxy.envoy.extensions.filters.http.hyperscan_scanner.v3";
+option java_outer_classname = "HyperscanScannerProto";
+option java_multiple_files = true;
+option go_package = "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/hyperscan_scanner/v3;hyperscan_scannerv3";
+option (udpa.annotations.file_status).package_version_status = ACTIVE;
+
+message Pattern {
+  // 匹配时的动作
+  enum Action {
+    CONTINUE = 0;
+    // 继续处理
+
+    BLOCK = 1;
+    // 阻止请求
+
+    LOG = 2;
+    // 仅记录日志
+  }
+
+  string regex = 1;
+
+  uint32 id = 2;
+
+  string description = 3;
+
+  Action action = 4;
+}
+
+message HyperscanScannerConfig {
+  // 正则表达式规则列表
+  repeated Pattern patterns = 1;
+}

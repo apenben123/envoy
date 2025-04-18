@@ -110,6 +110,8 @@ public:
   const std::string ExternalProcessing = "envoy.filters.http.ext_proc";
   // Set metadata filter
   const std::string SetMetadata = "envoy.filters.http.set_metadata";
+  // 注册自定义hyperscan过滤器名称
+  const std::string HyperscanScanner = "envoy.filters.http.hyperscan_scanner";
 };
 
 using HttpFilterNames = ConstSingleton<HttpFilterNameValues>;

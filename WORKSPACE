@@ -31,3 +31,10 @@ envoy_dependency_imports()
 load("//bazel:dependency_imports_extra.bzl", "envoy_dependency_imports_extra")
 
 envoy_dependency_imports_extra()
+
+# Add Hyperscan dependency
+new_local_repository(
+    name = "hyperscan",
+    build_file = "//bazel:hyperscan.BUILD",
+    path = "/usr/local",
+)
