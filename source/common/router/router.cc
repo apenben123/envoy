@@ -464,7 +464,7 @@ Http::FilterHeadersStatus Filter::decodeHeaders(Http::RequestHeaderMap& headers,
   // headers to append.
   std::function<void(Http::ResponseHeaderMap&)> modify_headers = [](Http::ResponseHeaderMap&) {};
 
-  // Determine if there is a route entry or a direct response for the request.
+  // 判断该请求是否存在路由条目或者直接响应。
   route_ = callbacks_->route();
   if (!route_) {
     stats_.no_route_.inc();
@@ -476,7 +476,7 @@ Http::FilterHeadersStatus Filter::decodeHeaders(Http::RequestHeaderMap& headers,
     return Http::FilterHeadersStatus::StopIteration;
   }
 
-  // Determine if there is a direct response for the request.
+  // 判断对于该请求是否存在直接的响应。
   const auto* direct_response = route_->directResponseEntry();
   if (direct_response != nullptr) {
     stats_.rq_direct_response_.inc();
@@ -515,6 +515,7 @@ Http::FilterHeadersStatus Filter::decodeHeaders(Http::RequestHeaderMap& headers,
                       route_entry_->clusterName());
     };
   }
+  //路由匹配的最终目的：找到目标集群
   Upstream::ThreadLocalCluster* cluster =
       config_->cm_.getThreadLocalCluster(route_entry_->clusterName());
   if (!cluster) {

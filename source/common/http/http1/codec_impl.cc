@@ -241,14 +241,14 @@ void StreamEncoderImpl::encodeHeadersBase(const RequestOrResponseHeaderMap& head
 }
 
 void StreamEncoderImpl::encodeData(Buffer::Instance& data, bool end_stream) {
-  // end_stream may be indicated with a zero length data buffer. If that is the case, so not
-  // actually write the zero length buffer out.
+  // 流结束（end_stream）可能会通过一个长度为零的数据缓冲区来指示。如果是这种情况，实际上不要将这个长度为零的缓冲区数据发送出去。
   if (data.length() > 0) {
     if (chunk_encoding_) {
       std::string chunk_header = absl::StrCat(absl::Hex(data.length()), CRLF);
       connection_.buffer().add(std::move(chunk_header));
     }
 
+    // 将数据放入发送缓冲区
     connection_.buffer().move(data);
 
     if (chunk_encoding_) {
@@ -256,6 +256,7 @@ void StreamEncoderImpl::encodeData(Buffer::Instance& data, bool end_stream) {
     }
   }
 
+  // 最后无论是否endstream，都会进行底层网络连接的flush操作
   if (end_stream) {
     endEncode();
   } else {
@@ -644,6 +645,7 @@ Http::Status ClientConnectionImpl::dispatch(Buffer::Instance& data) {
   return status;
 }
 
+// 具体的分发
 Http::Status ConnectionImpl::dispatch(Buffer::Instance& data) {
   // Add self to the Dispatcher's tracked object stack.
   ScopeTrackerScopeState scope(this, connection_.dispatcher());
@@ -707,6 +709,7 @@ Http::Status ConnectionImpl::dispatch(Buffer::Instance& data) {
 
 Envoy::StatusOr<size_t> ConnectionImpl::dispatchSlice(const char* slice, size_t len) {
   ASSERT(codec_status_.ok() && dispatching_);
+  // http 解析器执行
   const size_t nread = parser_->execute(slice, len);
   if (!codec_status_.ok()) {
     return codec_status_;
@@ -1197,9 +1200,7 @@ Status ServerConnectionImpl::checkProtocolVersion(RequestHeaderMap& headers) {
 }
 
 Envoy::StatusOr<CallbackResult> ServerConnectionImpl::onHeadersCompleteBase() {
-  // Handle the case where response happens prior to request complete. It's up to upper layer code
-  // to disconnect the connection but we shouldn't fire any more events since it doesn't make
-  // sense.
+  // 处理响应在请求完成之前就已出现的情况。断开连接的操作交由上层代码处理，但我们不应再触发任何事件了，因为这么做没有意义。
   if (active_request_) {
     auto& headers = absl::get<RequestHeaderMapPtr>(headers_or_trailers_);
     ENVOY_CONN_LOG(trace, "Server: onHeadersComplete size={}", connection_, headers->size());
@@ -1217,8 +1218,7 @@ Envoy::StatusOr<CallbackResult> ServerConnectionImpl::onHeadersCompleteBase() {
       }
     }
 
-    // Inform the response encoder about any HEAD method, so it can set content
-    // length and transfer encoding headers correctly.
+    // 告知响应编码器当前请求是否为 HEAD 方法，以便正确设置内容长度和传输编码头
     const Http::HeaderValues& header_values = Http::Headers::get();
     active_request_->response_encoder_.setIsResponseToHeadRequest(parser_->methodName() ==
                                                                   header_values.MethodValues.Head);
@@ -1227,7 +1227,7 @@ Envoy::StatusOr<CallbackResult> ServerConnectionImpl::onHeadersCompleteBase() {
 
     RETURN_IF_ERROR(handlePath(*headers, parser_->methodName()));
     ASSERT(active_request_->request_url_.empty());
-
+    // 设置method
     headers->setMethod(parser_->methodName());
     RETURN_IF_ERROR(checkProtocolVersion(*headers));
 
@@ -1239,19 +1239,17 @@ Envoy::StatusOr<CallbackResult> ServerConnectionImpl::onHeadersCompleteBase() {
           "http/1.1 protocol error: request headers failed spec compliance checks");
     }
 
-    // Determine here whether we have a body or not. This uses the new RFC semantics where the
-    // presence of content-length or chunked transfer-encoding indicates a body vs. a particular
-    // method. If there is no body, we defer raising decodeHeaders() until the parser is flushed
-    // with message complete. This allows upper layers to behave like HTTP/2 and prevents a proxy
-    // scenario where the higher layers stream through and implicitly switch to chunked transfer
-    // encoding because end stream with zero body length has not yet been indicated.
+    // 在这里确定请求是否包含消息体。使用新的 RFC 语义，即存在 Content-Length 或分块传输编码表示有消息体，而不是根据特定方法。
+    // 如果没有消息体，我们会延迟调用 decodeHeaders() 直到解析器接收到消息完成信号。
+    // 这允许上层像处理 HTTP/2 一样处理请求，并防止代理场景中高层流隐式切换到分块传输编码，因为零长度消息体的结束流尚未指示。
     if (parser_->isChunked() ||
         (parser_->contentLength().has_value() && parser_->contentLength().value() > 0) ||
         handling_upgrade_) {
+      // 此处，将在上一阶段初始化出来的请求解码器拿出，进行头解析。
+      // 调用请求解码器的 decodeHeaders 方法处理请求头，第二个参数表示消息未结束
       active_request_->request_decoder_->decodeHeaders(std::move(headers), false);
 
-      // If the connection has been closed (or is closing) after decoding headers, pause the parser
-      // so we return control to the caller.
+      // 如果在解码请求头后连接已关闭（或正在关闭），暂停解析器以将控制权返回给调用者
       if (connection_.state() != Network::Connection::State::Open) {
         return parser_->pause();
       }
@@ -1263,9 +1261,14 @@ Envoy::StatusOr<CallbackResult> ServerConnectionImpl::onHeadersCompleteBase() {
   return CallbackResult::Success;
 }
 
+// 收到一个HTTP请求的开始
 Status ServerConnectionImpl::onMessageBeginBase() {
   if (!resetStreamCalled()) {
     ASSERT(active_request_ == nullptr);
+    // 创建 active_request_
+    // 设置一个Codec（ServerConnection）的Decoder和Encoder。
+    // 这边的Encoder即为ServerConnection自己（注意，ServerConnection持有了网络层的ConnectionImpl实例，可以用以进行响应回写，后面会进一步提及），
+    // Decoder即为ActiveStream。ActiveStream会持有ServerConnection（有点绕）。
     active_request_ = std::make_unique<ActiveRequest>(*this, std::move(bytes_meter_before_stream_));
     active_request_->request_decoder_ = &callbacks_.newStream(active_request_->response_encoder_);
 
@@ -1295,6 +1298,7 @@ void ServerConnectionImpl::onBody(Buffer::Instance& data) {
   }
 }
 
+// 驱动解码器
 Http::Status ServerConnectionImpl::dispatch(Buffer::Instance& data) {
   if (abort_dispatch_ != nullptr && abort_dispatch_->shouldShedLoad()) {
     RETURN_IF_ERROR(sendOverloadError());

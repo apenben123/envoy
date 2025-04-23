@@ -23,7 +23,7 @@ HyperscanFilter::HyperscanFilter(const HyperscanScannerConfig& config) {
         for (const auto& pattern : patterns_) {
             regex_storage.emplace_back(pattern.regex());  // 拷贝字符串
             expressions.push_back(regex_storage.back().c_str());
-            flags.push_back(HS_FLAG_DOTALL | HS_FLAG_SINGLEMATCH);
+            flags.push_back(HS_FLAG_DOTALL | HS_FLAG_SINGLEMATCH | HS_FLAG_ALLOWEMPTY);
             ids.push_back(pattern.id());
         }
         ENVOY_LOG(info, "Prepared {} expressions for compilation", expressions.size());
@@ -112,6 +112,7 @@ Http::FilterHeadersStatus HyperscanFilter::decodeHeaders(Http::RequestHeaderMap&
     UNREFERENCED_PARAMETER(end_stream);
     // 检查URL路径
     absl::string_view path = headers.getPathValue();
+    ENVOY_LOG(info, "decodeHeaders, path={}", path);
     if (hs_scan(database_, path.data(), path.length(), 0, scratch_, onMatch, this) != HS_SUCCESS) {
         ENVOY_LOG(error, "Hyperscan scan failed on URL");
     }
@@ -126,6 +127,7 @@ Http::FilterDataStatus HyperscanFilter::decodeData(Buffer::Instance& data, bool 
     auto raw_data = std::make_unique<char[]>(length);
     data.copyOut(0, length, raw_data.get());
 
+    ENVOY_LOG(info, "decodeData, length={}, data={}", length, data.toString());
     if (hs_scan(database_, raw_data.get(), length, 0, scratch_, onMatch, this) != HS_SUCCESS) {
         ENVOY_LOG(error, "Hyperscan scan failed on body");
     }

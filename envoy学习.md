@@ -326,3 +326,207 @@ source/extensions/filters/network/
 - 注意 `bazel-bin` 等符号链接是构建时生成的缓存
 
 这个结构展示了Envoy高度模块化的设计, 你的插件开发应该遵循这种模式, 选择正确的扩展目录, 保持清晰的依赖关系。
+
+
+
+
+#### envoy httpfilter 
+/envoy/source/common/http/filter_manager.h                                   # 管理filter
+/envoy/source/extensions/filters/http/hyperscan_scanner/hyperscan_scanner.h  # 具体filter 
+
+
+
+  继承关系
+  ConnectionImpl->ConnectionImplBase->FilterManagerConnection
+  构建
+  FilterManagerImpl(FilterManagerConnection& connection, const Socket& socket)
+
+
+
+### 源码解析
+
+#### 启动流程:
+/envoy/source/exe/main.cc              - int main(int argc, char** argv)
+|_ /envoy/source/exe/main_common.cc     - bool MainCommonBase::run()  [class MainCommonBase : public StrippedMainBase]
+   |_   /envoy/source/exe/main_common.cc 先构造 MainCommonBase           - MainCommonBase::MainCommonBase 
+   |    |_   createFunction 函数在 init 里面被调用 - init(...,  createFunction()); 
+   |       |_   /envoy/source/exe/main_common.cc 创建 Server::InstanceImpl    - server = std::make_unique<Server::InstanceImpl>    [InstanceImpl : public InstanceBase ]
+   |       |_   /envoy/source/exe/main_common.cc server 初始化  server->initialize   
+   |           |_ /envoysource/server/server.cc void InstanceBase::initialize -> InstanceBase::initializeOrThrow
+   |_  启动 执行run()函数
+
+
+
+
+0. 主入口
+```mermaid
+sequenceDiagram
+   participant main.cc as source/exe/main.cc
+   participant main_common.cc as source/exe/main_common.cc
+
+   main.cc->>+main_common.cc: MainCommon::main()
+   main_common.cc->>+main_common.cc: MainCommonBase::MainCommonBase 构造和初始化
+   main_common.cc->>+main_common.cc: MainCommonBase::run() 运行
+```
+
+1. 服务器初始化阶段 **所有代码均以 source/ 为根目录**
+```mermaid
+sequenceDiagram
+   participant main_common.cc as exe/main_common.cc
+   participant server.cc as  server/server.cc
+   participant configuration_impl.cc as  server/configuration_impl.cc
+   participant listener_manager_impl.cc as common/listener_manager/listener_manager_impl.cc
+   participant listener_impl.cc as common/listener_manager/listener_impl.cc
+   participant worker_impl.cc as server/worker_impl.cc
+
+   main_common.cc->>+main_common.cc: StrippedMainBase::init(..., createFunction()) <br/>-> 回调createFunction()
+   main_common.cc->>+server.cc: std::make_unique<Server::InstanceImpl> <br/>构造server
+   main_common.cc->>+server.cc: InstanceBase::initialize <br/>server初始化
+   server.cc-->>server.cc: InstanceBase::initializeOrThrow
+   server.cc-->>listener_manager_impl.cc:  createListenerManager 初始化ListenerManager, <br/>传进去的 servir 是 InstanceBase 
+   listener_manager_impl.cc->>worker_impl.cc : ProdWorkerFactory::createWorker <br/>创建worker
+   server.cc-->>configuration_impl.cc: MainImpl::initialize
+   configuration_impl.cc-->>listener_manager_impl.cc: ListenerManagerImpl::addOrUpdateListener
+   listener_manager_impl.cc-->>listener_manager_impl.cc: ListenerManagerImpl::addOrUpdateListenerInternal
+   listener_manager_impl.cc-->>listener_impl.cc: ListenerImpl::newListenerWithFilterChain
+   listener_impl.cc-->>listener_impl.cc: ListenerImpl::ListenerImpl(ListenerImpl& origin,...) <br/>构造ListenerImpl
+```
+
+2. 服务器启动和监听器构建阶段 **所有代码均以 source/ 为根目录**
+```mermaid
+sequenceDiagram
+
+   participant main_common.cc as exe/main_common.cc
+   participant stripped_main_base.cc as  exe/stripped_main_base.cc
+   participant server.cc as  server/server.cc
+   participant listener_manager_impl.cc as common/listener_manager/listener_manager_impl.cc
+   participant worker_impl.cc as server/worker_impl.cc
+   participant connection_handler_impl.cc as common/listener_manager/connection_handler_impl.cc
+   participant active_tcp_listener.cc as common/listener_manager/active_tcp_listener.cc
+   participant tcp_listener_impl.cc as common/network/tcp_listener_impl.cc
+   participant io_socket_handle_impl.cc as common/network/io_socket_handle_impl.cc
+
+   main_common.cc->>stripped_main_base.cc: runServer()
+   stripped_main_base.cc->>server.cc: InstanceBase::run()
+   server.cc->>server.cc: InstanceBase::startWorkers()
+   server.cc->>listener_manager_impl.cc: ListenerManagerImpl::startWorkers
+   listener_manager_impl.cc->>listener_manager_impl.cc: ListenerManagerImpl::addListenerToWorker
+   listener_manager_impl.cc->>worker_impl.cc: WorkerImpl::addListener
+   worker_impl.cc->>connection_handler_impl.cc: ConnectionHandlerImpl::addListener
+   connection_handler_impl.cc->>active_tcp_listener.cc: ActiveTcpListener::ActiveTcpListener <br/>构建 ActiveTcpListener
+   active_tcp_listener.cc->>connection_handler_impl.cc: ConnectionHandlerImpl::createListener 
+   connection_handler_impl.cc->>tcp_listener_impl.cc: TcpListenerImpl::TcpListenerImpl <br/>构建 TcpListenerImpl
+   tcp_listener_impl.cc->>io_socket_handle_impl.cc: IoSocketHandleImpl::initializeFileEvent <br/>创建文件描述符(套接字)并注册回调函数 <br/>[TcpListenerImpl::onSocketEvent]
+
+   listener_manager_impl.cc->>worker_impl.cc: WorkerImpl::start 启动worker
+
+```
+
+2.1 创建文件描述符(套接字) **所有代码均以 source/ 为根目录**
+```mermaid
+sequenceDiagram
+   participant tcp_listener_impl.cc as common/network/tcp_listener_impl.cc
+   participant io_socket_handle_impl.cc as common/network/io_socket_handle_impl.cc
+   participant dispatcher_impl.cc as common/event/dispatcher_impl.cc
+   participant file_event_impl.cc as common/event/file_event_impl.cc
+
+   tcp_listener_impl.cc->>io_socket_handle_impl.cc: IoSocketHandleImpl::initializeFileEvent <br/>创建文件描述符(套接字)并注册回调函数 <br/>[TcpListenerImpl::onSocketEvent]
+   io_socket_handle_impl.cc->>dispatcher_impl.cc: DispatcherImpl::createFileEvent 
+   dispatcher_impl.cc->>file_event_impl.cc: FileEventImpl::FileEventImpl <br/>创建文件描述符(套接字),  <br/>底层基于libevent 的 event_assign和event_add  
+```
+
+2.2 启动监听 **所有代码均以 source/ 为根目录**
+```mermaid
+sequenceDiagram
+   participant listener_manager_impl.cc as common/listener_manager/listener_manager_impl.cc
+   participant worker_impl.cc as server/worker_impl.cc
+   participant dispatcher_impl.cc as common/event/dispatcher_impl.cc
+
+   listener_manager_impl.cc->>worker_impl.cc: WorkerImpl::start 启动worker
+   worker_impl.cc->>worker_impl.cc: WorkerImpl::threadRoutine
+   worker_impl.cc->>dispatcher_impl.cc: DispatcherImpl::run(RunType type)
+   dispatcher_impl.cc->>libevent_scheduler.cc:LibeventScheduler::run <br/>启动libevent处理监听
+```
+
+
+3. 处理请求阶段 http连接建立
+```mermaid
+sequenceDiagram
+   participant active_tcp_listener.cc as common/listener_manager/active_tcp_listener.cc
+   participant tcp_listener_impl.cc as common/network/tcp_listener_impl.cc
+   participant active_stream_listener_base.cc as common/listener_manager/active_stream_listener_base.cc
+   participant active_tcp_socket.cc as common/listener_manager/active_tcp_socket.cc
+   participant dispatcher_impl.cc as common/event/dispatcher_impl.cc
+
+   tcp_listener_impl.cc->>active_tcp_listener.cc: ActiveTcpListener::onAccept <br/>由请求过来时[TcpListenerImpl::onSocketEvent 调用到这]
+   active_tcp_listener.cc->>active_tcp_listener.cc: ActiveTcpListener::onAcceptWorker
+   active_tcp_listener.cc->>active_stream_listener_base.cc: onSocketAccepted(std::unique_ptr<ActiveTcpSocket> active_socket) <br/>继承关系 class ActiveTcpListener: public OwnedActiveStreamListenerBase <br/>public OwnedActiveStreamListenerBase: public ActiveStreamListenerBase
+   active_stream_listener_base.cc->>active_tcp_socket.cc: startFilterChain=><br/>ActiveTcpSocket::continueFilterChain
+   active_tcp_socket.cc->>active_tcp_socket.cc: ActiveTcpSocket::newConnection() <br/>连接初始化
+   active_tcp_socket.cc->>active_stream_listener_base.cc: ActiveStreamListenerBase::newConnection
+   active_stream_listener_base.cc->>dispatcher_impl.cc: DispatcherImpl::createServerConnection <br/>创建ServerConnection
+```
+
+
+
+4. 处理请求阶段 请求数据获取
+```mermaid
+sequenceDiagram
+   participant active_tcp_listener.cc as common/listener_manager/active_tcp_listener.cc
+   participant tcp_listener_impl.cc as common/network/tcp_listener_impl.cc
+   participant active_stream_listener_base.cc as common/listener_manager/active_stream_listener_base.cc
+   participant active_tcp_socket.cc as common/listener_manager/active_tcp_socket.cc
+   participant dispatcher_impl.cc as common/event/dispatcher_impl.cc
+   participant connection_impl.cc as common/network/connection_impl.cc
+   participant io_socket_handle_impl.cc as common/network/io_socket_handle_impl.cc
+
+   tcp_listener_impl.cc->>active_tcp_listener.cc: ActiveTcpListener::onAccept <br/>由请求过来时[TcpListenerImpl::onSocketEvent 调用到这]
+   active_tcp_listener.cc->>active_tcp_listener.cc: ActiveTcpListener::onAcceptWorker
+   active_tcp_listener.cc->>active_stream_listener_base.cc: onSocketAccepted(std::unique_ptr<ActiveTcpSocket> active_socket) <br/>继承关系 class ActiveTcpListener: public OwnedActiveStreamListenerBase <br/>public OwnedActiveStreamListenerBase: public ActiveStreamListenerBase
+   active_stream_listener_base.cc->>active_tcp_socket.cc: startFilterChain=><br/>ActiveTcpSocket::continueFilterChain
+   active_tcp_socket.cc->>active_tcp_socket.cc: ActiveTcpSocket::newConnection() <br/>连接初始化
+   active_tcp_socket.cc->>active_stream_listener_base.cc: ActiveStreamListenerBase::newConnection
+   active_stream_listener_base.cc->>dispatcher_impl.cc: DispatcherImpl::createServerConnection <br/>创建ServerConnection
+   dispatcher_impl.cc->>connection_impl.cc: ServerConnectionImpl::ServerConnectionImpl <br/>构建 ServerConnection
+   connection_impl.cc->>connection_impl.cc: ConnectionImpl::ConnectionImpl <br/>构建连接实例
+   connection_impl.cc->>+io_socket_handle_impl.cc: IoSocketHandleImpl::initializeFileEvent <br/>创建文件描述符(套接字)并注册回调函数 <br/>[ConnectionImpl::onFileEvent]
+   io_socket_handle_impl.cc->>-connection_impl.cc: 回调 ConnectionImpl::onFileEvent
+   connection_impl.cc->>connection_impl.cc: ConnectionImpl::onReadReady() <br/>调用 onReadReady 方法处理读就绪事件
+   connection_impl.cc->>connection_impl.cc: ConnectionImpl::onWriteReady() <br/>调用 onWriteReady 方法处理写就绪事件
+```
+
+
+
+5. 处理请求阶段 读就绪事件
+```mermaid
+sequenceDiagram
+   participant connection_impl.cc as common/network/connection_impl.cc
+   participant filter_manager_impl.cc as source/common/network/filter_manager_impl.cc
+   participant conn_manager_impl.cc as source/common/http/conn_manager_impl.cc
+   participant http_connection_manager.cc as source/extensions/filters/network/http_connection_manager/config.cc
+   participant codec_impl.cc as source/common/http/http1/codec_impl.cc
+   participant legacy_parser_impl.cc as source/common/http/http1/legacy_parser_impl.cc
+   participant raw_buffer_socket.cc as source/common/network/raw_buffer_socket.cc
+   participant io_socket_handle_impl.cc as source/common/network/io_socket_handle_impl.cc
+
+   connection_impl.cc->>connection_impl.cc: ConnectionImpl::onReadReady() <br/>调用 onReadReady 方法处理读就绪事件
+   rect grey
+      connection_impl.cc->>connection_impl.cc: ConnectionImpl::onRead
+      connection_impl.cc->>filter_manager_impl.cc: FilterManagerImpl::onRead()
+      filter_manager_impl.cc->>filter_manager_impl.cc: FilterManagerImpl::onContinueReading  <br/>请求数据处理流程拼装
+      filter_manager_impl.cc->>conn_manager_impl.cc: ConnectionManagerImpl::onData
+      conn_manager_impl.cc->>conn_manager_impl.cc: ConnectionManagerImpl::createCodec <br/>创建HTTP协议解码器
+      conn_manager_impl.cc->>http_connection_manager.cc: HttpConnectionManagerConfig::createCodec <br/>创建HTTP协议解码器
+      http_connection_manager.cc->>http_connection_manager.cc: std::make_unique<Http::Http1::ServerConnectionImpl> <br/>ConnectionImpl::ConnectionImpl 构建 ConnectionImpl <br/>ServerConnectionImpl : public ServerConnection, public ConnectionImpl
+      http_connection_manager.cc->>legacy_parser_impl.cc: Impl(http_parser_type type, void* data) <br/>构建LegacyHttpParserImpl <br/>settings_ 初始化了 parse 各个阶段的 callbacks
+
+      conn_manager_impl.cc->>codec_impl.cc: ConnectionImpl::dispatch <br/>驱动解码器(http1为例)
+      codec_impl.cc->>codec_impl.cc: ConnectionImpl::dispatchSlice
+      codec_impl.cc->>legacy_parser_impl.cc: LegacyHttpParserImpl::execute -> <br/>size_t execute <br/>调用 http_parser 库解析
+   end
+   connection_impl.cc->>raw_buffer_socket.cc: RawBufferSocket::doRead
+   raw_buffer_socket.cc->>io_socket_handle_impl.cc: IoSocketHandleImpl::read <br/>进行 readv 的系统调用
+   
+
+```
+

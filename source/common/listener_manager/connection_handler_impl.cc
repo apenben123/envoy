@@ -37,13 +37,21 @@ void ConnectionHandlerImpl::decNumConnections() {
   --num_handler_connections_;
 }
 
+/*
+  Listener初始化 worker.addListener=>handler_->addListener 最终会调用到这里
+  主要功能是在 ConnectionHandlerImpl 中添加一个新的监听器，或者更新已有的监听器配置。
+  根据传入的配置信息，该方法会创建不同类型的监听器（如内部监听器、TCP 监听器、UDP 监听器），并将其注册到相应的映射表中，以便后续管理和查找。
+*/
 void ConnectionHandlerImpl::addListener(absl::optional<uint64_t> overridden_listener,
                                         Network::ListenerConfig& config, Runtime::Loader& runtime,
                                         Random::RandomGenerator& random) {
+  // 1. 检查是否为覆盖已有监听器  
   if (overridden_listener.has_value()) {
+    // 通过 findActiveListenerByTag 方法找到对应的监听器详情。
     ActiveListenerDetailsOptRef listener_detail =
         findActiveListenerByTag(overridden_listener.value());
     ASSERT(listener_detail.has_value());
+    // 调用 invokeListenerMethod 方法，传入一个 lambda 表达式，该表达式会调用监听器的 updateListenerConfig 方法来更新配置。
     listener_detail->get().invokeListenerMethod(
         [&config](Network::ConnectionHandler::ActiveListener& listener) {
           listener.updateListenerConfig(config);
@@ -51,16 +59,22 @@ void ConnectionHandlerImpl::addListener(absl::optional<uint64_t> overridden_list
     return;
   }
 
+  // 2. 创建新的监听器详情对象
   auto details = std::make_unique<ActiveListenerDetails>();
-  if (config.internalListenerConfig().has_value()) {
+  // 3. 处理内部监听器  [内部监听器主要用于 Envoy 内部组件之间的通信，而不是用于接收来自外部网络的连接]
+  if (config.internalListenerConfig().has_value()) { // 如果配置中包含内部监听器配置：
     // Ensure the this ConnectionHandlerImpl link to the thread local registry. Ideally this step
     // should be done only once. However, an extra phase and interface is overkill.
+    // 获取内部监听器注册表和本地注册表。
     Network::InternalListenerRegistry& internal_listener_registry =
         config.internalListenerConfig()->internalListenerRegistry();
     Network::LocalInternalListenerRegistry* local_registry =
         internal_listener_registry.getLocalRegistry();
+    // 确保本地注册表不为空，
     RELEASE_ASSERT(local_registry != nullptr, "Failed to get local internal listener registry.");
+    // 将当前的 ConnectionHandlerImpl 对象设置为内部监听器管理器。
     local_registry->setInternalListenerManager(*this);
+    // 如果 overridden_listener 有值，尝试更新已有的监听器配置。
     if (overridden_listener.has_value()) {
       if (auto iter = listener_map_by_tag_.find(overridden_listener.value());
           iter != listener_map_by_tag_.end()) {
@@ -72,15 +86,22 @@ void ConnectionHandlerImpl::addListener(absl::optional<uint64_t> overridden_list
       }
       IS_ENVOY_BUG("unexpected");
     }
+    // 通过本地注册表创建一个新的内部监听器。
     auto internal_listener =
         local_registry->createActiveInternalListener(*this, config, dispatcher());
     // TODO(soulxu): support multiple internal addresses in listener in the future.
     ASSERT(config.listenSocketFactories().size() == 1);
+    // 调用 details->addActiveListener 方法将内部监听器添加到详情对象中。
     details->addActiveListener(
         config, config.listenSocketFactories()[0]->localAddress(), listener_reject_fraction_,
         disable_listeners_, std::move(internal_listener),
         config.shouldBypassOverloadManager() ? null_overload_manager_ : overload_manager_);
-  } else if (config.listenSocketFactories()[0]->socketType() == Network::Socket::Type::Stream) {
+  } else if (config.listenSocketFactories()[0]->socketType() == Network::Socket::Type::Stream) { // 如果监听器的套接字类型为流（即 TCP）
+    //4. 处理 TCP 监听器
+    // TCP 监听器可以绑定到指定的 IP 地址和端口，用于接收来自下游主机的 TCP 连接请求。
+    // 例如，在常见的 Web 服务场景中，Envoy 作为反向代理，会通过 TCP 监听器监听 80 端口（HTTP）或 443 端口（HTTPS），以接收客户端的 HTTP 或 HTTPS 请求。
+    
+    // 根据配置决定是否绕过过载管理器，获取相应的过载状态
     auto overload_state =
         config.shouldBypassOverloadManager()
             ? (null_overload_manager_
@@ -88,22 +109,28 @@ void ConnectionHandlerImpl::addListener(absl::optional<uint64_t> overridden_list
                    : absl::nullopt)
             : (overload_manager_ ? makeOptRef(overload_manager_->getThreadLocalOverloadState())
                                  : absl::nullopt);
+    // 遍历所有的套接字工厂，为每个工厂创建一个 ActiveTcpListener 对象。  
     for (auto& socket_factory : config.listenSocketFactories()) {
       auto address = socket_factory->localAddress();
       // worker_index_ doesn't have a value on the main thread for the admin server.
+      // 调用 details->addActiveListener 方法将 TCP 监听器添加到详情对象中。
       details->addActiveListener(
           config, address, listener_reject_fraction_, disable_listeners_,
-          std::make_unique<ActiveTcpListener>(
+          std::make_unique<ActiveTcpListener>( // 这个构建 第一个参数传的this, 所以会回调回来调用 createListener
               *this, config, runtime, random,
               socket_factory->getListenSocket(worker_index_.has_value() ? *worker_index_ : 0),
               address, config.connectionBalancer(*address), overload_state),
           config.shouldBypassOverloadManager() ? null_overload_manager_ : overload_manager_);
     }
-  } else {
+  } else { 
+    // 5. 处理 UDP 监听器  (如果既不是内部监听器也不是 TCP 监听器，则认为是 UDP 监听器。)
+    // 确保 UDP 监听器配置已初始化，并且工作线程索引有值。
     ASSERT(config.udpListenerConfig().has_value(), "UDP listener factory is not initialized.");
     ASSERT(worker_index_.has_value());
+    // 遍历所有的套接字工厂，通过 UDP 监听器工厂创建一个 ActiveUdpListener 对象。
     for (auto& socket_factory : config.listenSocketFactories()) {
       auto address = socket_factory->localAddress();
+      // 调用 details->addActiveListener 方法将 UDP 监听器添加到详情对象中。
       details->addActiveListener(
           config, address, listener_reject_fraction_, disable_listeners_,
           config.udpListenerConfig()->listenerFactory().createActiveUdpListener(
@@ -113,12 +140,15 @@ void ConnectionHandlerImpl::addListener(absl::optional<uint64_t> overridden_list
     }
   }
 
+  //6. 更新监听器映射表
+  // 确保监听器标签在 listener_map_by_tag_ 中不存在。
   ASSERT(!listener_map_by_tag_.contains(config.listenerTag()));
-
+  // 遍历详情对象中的每个地址详情：
   for (const auto& per_address_details : details->per_address_details_list_) {
     // This map only stores the new listener.
     if (absl::holds_alternative<std::reference_wrapper<ActiveTcpListener>>(
             per_address_details->typed_listener_)) {
+      // 如果是 TCP 监听器，将其添加到 tcp_listener_map_by_address_ 映射表中。
       tcp_listener_map_by_address_.insert_or_assign(per_address_details->address_->asStringView(),
                                                     per_address_details);
 
@@ -126,6 +156,7 @@ void ConnectionHandlerImpl::addListener(absl::optional<uint64_t> overridden_list
       // If the address is Ipv6 and isn't v6only, parse out the ipv4 compatible address from the
       // Ipv6 address and put an item to the map. Then this allows the `getBalancedHandlerByAddress`
       // can match the Ipv4 request to Ipv4-mapped address also.
+      // 如果是 IPv6 地址且不是仅支持 IPv6，则处理 IPv4 兼容地址，将其也添加到映射表中。
       if (address->type() == Network::Address::Type::Ip &&
           address->ip()->version() == Network::Address::IpVersion::v6 &&
           !address->ip()->ipv6()->v6only()) {
@@ -150,11 +181,13 @@ void ConnectionHandlerImpl::addListener(absl::optional<uint64_t> overridden_list
         }
       }
     } else if (absl::holds_alternative<std::reference_wrapper<Network::InternalListener>>(
+      // 如果是内部监听器，将其添加到 internal_listener_map_by_address_ 映射表中。
                    per_address_details->typed_listener_)) {
       internal_listener_map_by_address_.insert_or_assign(
           per_address_details->address_->envoyInternalAddress()->addressId(), per_address_details);
     }
   }
+  // 最后，将监听器详情对象添加到 listener_map_by_tag_ 映射表中。
   listener_map_by_tag_.emplace(config.listenerTag(), std::move(details));
 }
 
@@ -359,6 +392,7 @@ ConnectionHandlerImpl::getBalancedHandlerByTag(uint64_t listener_tag,
   return absl::nullopt;
 }
 
+// 外面(ActiveTcpListener::ActiveTcpListener 构造)回调过来, 第二个参数又是传的this
 Network::ListenerPtr ConnectionHandlerImpl::createListener(
     Network::SocketSharedPtr&& socket, Network::TcpListenerCallbacks& cb, Runtime::Loader& runtime,
     Random::RandomGenerator& random, const Network::ListenerConfig& config,

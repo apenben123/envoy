@@ -1546,7 +1546,7 @@ private:
   bool ignorePortInHostMatching() const { return ignore_port_in_host_matching_; }
 
   Stats::ScopeSharedPtr vhost_scope_;
-  absl::node_hash_map<std::string, VirtualHostSharedPtr> virtual_hosts_;
+  absl::node_hash_map<std::string, VirtualHostSharedPtr> virtual_hosts_; // 不包含通配
   // std::greater as a minor optimization to iterate from more to less specific
   //
   // A note on using an unordered_map versus a vector of (string, VirtualHostSharedPtr) pairs:
@@ -1556,10 +1556,10 @@ private:
   // and climbs to about 110ns once there are any entries.
   //
   // The break-even is 4 entries.
-  WildcardVirtualHosts wildcard_virtual_host_suffixes_;
-  WildcardVirtualHosts wildcard_virtual_host_prefixes_;
+  WildcardVirtualHosts wildcard_virtual_host_suffixes_; // domain中通配符在开头
+  WildcardVirtualHosts wildcard_virtual_host_prefixes_; // domain中通配符在结尾
 
-  VirtualHostSharedPtr default_virtual_host_;
+  VirtualHostSharedPtr default_virtual_host_;  //domain就是一个通配符(只允许存在一个)
   const bool ignore_port_in_host_matching_{false};
 };
 

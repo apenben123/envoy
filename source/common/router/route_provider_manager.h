@@ -46,6 +46,7 @@ namespace Router {
 using ProtoTraitsImpl =
     Rds::Common::ProtoTraitsImpl<envoy::config::route::v3::RouteConfiguration, 1>;
 
+//全局唯一的单例对象，负责创建和管理不同类型的 routeconfigprovider。
 class RouteConfigProviderManagerImpl : public RouteConfigProviderManager,
                                        public Singleton::Instance {
 public:

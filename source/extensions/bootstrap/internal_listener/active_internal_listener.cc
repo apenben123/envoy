@@ -52,6 +52,9 @@ void ActiveInternalListener::updateListenerConfig(Network::ListenerConfig& confi
   config_ = &config;
 }
 
+// 回调时候主要做两件事情，
+// 1. 构建出对应的Listener Accept Filter
+// 2. 构建出ServerConnection
 void ActiveInternalListener::onAccept(Network::ConnectionSocketPtr&& socket) {
   // Unlike tcp listener, no rebalancer is applied and won't call pickTargetHandler to account
   // connections.

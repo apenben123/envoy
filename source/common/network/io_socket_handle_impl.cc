@@ -95,6 +95,7 @@ Api::IoCallUint64Result IoSocketHandleImpl::readv(uint64_t max_length, Buffer::R
   return result;
 }
 
+// 获取数据的入口
 Api::IoCallUint64Result IoSocketHandleImpl::read(Buffer::Instance& buffer,
                                                  absl::optional<uint64_t> max_length_opt) {
   const uint64_t max_length = max_length_opt.value_or(UINT64_MAX);
@@ -102,6 +103,7 @@ Api::IoCallUint64Result IoSocketHandleImpl::read(Buffer::Instance& buffer,
     return Api::ioCallUint64ResultNoError();
   }
   Buffer::Reservation reservation = buffer.reserveForRead();
+  // 进行 readv 的系统调用
   Api::IoCallUint64Result result = readv(std::min(reservation.length(), max_length),
                                          reservation.slices(), reservation.numSlices());
   uint64_t bytes_to_commit = result.ok() ? result.return_value_ : 0;
@@ -600,6 +602,8 @@ void IoSocketHandleImpl::initializeFileEvent(Event::Dispatcher& dispatcher, Even
                                              Event::FileTriggerType trigger, uint32_t events) {
   ASSERT(file_event_ == nullptr, "Attempting to initialize two `file_event_` for the same "
                                  "file descriptor. This is not allowed.");
+  // 创建文件描述符(套接字), 利用了libevent对连接的读写事件进行监听，同时采用了epoll边缘触发的机制。    
+  // 底层基于event_assign和event_add                           
   file_event_ = dispatcher.createFileEvent(fd_, cb, trigger, events);
 }
 

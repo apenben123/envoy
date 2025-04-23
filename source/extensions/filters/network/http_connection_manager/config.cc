@@ -216,6 +216,7 @@ createHeaderValidatorFactory([[maybe_unused]] const envoy::extensions::filters::
 
 // Singleton registration via macro defined in envoy/singleton/manager.h
 SINGLETON_MANAGER_REGISTRATION(date_provider);
+//3.创建路由配置管理器：全局单例对象 route_config_provider_manager
 SINGLETON_MANAGER_REGISTRATION(route_config_provider_manager);
 SINGLETON_MANAGER_REGISTRATION(scoped_routes_config_provider_manager);
 static const std::string srds_factory_name = "envoy.srds_factory.default";
@@ -230,6 +231,7 @@ Utility::Singletons Utility::createSingletons(Server::Configuration::FactoryCont
                 server_context.mainThreadDispatcher(), server_context.threadLocal());
           });
 
+  //创建路由配置管理器
   Router::RouteConfigProviderManagerSharedPtr route_config_provider_manager =
       server_context.singletonManager().getTyped<Router::RouteConfigProviderManager>(
           SINGLETON_MANAGER_REGISTERED_NAME(route_config_provider_manager), [&server_context] {
@@ -267,6 +269,7 @@ absl::StatusOr<std::shared_ptr<HttpConnectionManagerConfig>> Utility::createConf
     Tracing::TracerManager& tracer_manager,
     FilterConfigProviderManager& filter_config_provider_manager) {
   absl::Status creation_status = absl::OkStatus();
+  // 这里面会 利用 route_config_provider_manager 创建和管理 route_config_provider_
   auto config = std::make_shared<HttpConnectionManagerConfig>(
       proto_config, context, date_provider, route_config_provider_manager,
       scoped_routes_config_provider_manager, tracer_manager, filter_config_provider_manager,
@@ -275,6 +278,7 @@ absl::StatusOr<std::shared_ptr<HttpConnectionManagerConfig>> Utility::createConf
   return config;
 }
 
+//5.创建HTTP连接管理器
 absl::StatusOr<Network::FilterFactoryCb>
 HttpConnectionManagerFilterConfigFactory::createFilterFactoryFromProtoTyped(
     const envoy::extensions::filters::network::http_connection_manager::v3::HttpConnectionManager&
@@ -289,7 +293,7 @@ HttpConnectionManagerFilterConfigFactory::createFilterFactoryFromProtoAndHopByHo
         proto_config,
     Server::Configuration::FactoryContext& context, bool clear_hop_by_hop_headers) {
   Utility::Singletons singletons = Utility::createSingletons(context);
-
+  // 创建 HTTP连接管理器配置
   auto config_or_error = Utility::createConfig(
       proto_config, context, *singletons.date_provider_, *singletons.route_config_provider_manager_,
       singletons.scoped_routes_config_provider_manager_.get(), *singletons.tracer_manager_,
@@ -307,6 +311,7 @@ HttpConnectionManagerFilterConfigFactory::createFilterFactoryFromProtoAndHopByHo
     Server::OverloadManager& overload_manager = context.listenerInfo().shouldBypassOverloadManager()
                                                     ? server_context.nullOverloadManager()
                                                     : server_context.overloadManager();
+    // 这里创建 HTTP连接管理器 实例, 使用上面的 HTTP连接管理器配置  filter_config                    
     auto hcm = std::make_shared<Http::ConnectionManagerImpl>(
         filter_config, context.drainDecision(), server_context.api().randomGenerator(),
         server_context.httpContext(), server_context.runtime(), server_context.localInfo(),
@@ -329,7 +334,7 @@ MobileHttpConnectionManagerFilterConfigFactory::createFilterFactoryFromProtoType
 }
 
 /**
- * Static registration for the HTTP connection manager filter.
+ * 静态注册为NetworkFilter
  */
 LEGACY_REGISTER_FACTORY(HttpConnectionManagerFilterConfigFactory,
                         Server::Configuration::NamedNetworkFilterConfigFactory,
@@ -551,6 +556,7 @@ HttpConnectionManagerConfig::HttpConnectionManagerConfig(
   switch (config.route_specifier_case()) {
   case envoy::extensions::filters::network::http_connection_manager::v3::HttpConnectionManager::
       RouteSpecifierCase::kRds:
+    //route_config_provider_manager:负责创建和管理route_config_provider_
     route_config_provider_ = route_config_provider_manager.createRdsRouteConfigProvider(
         // At the creation of a RDS route config provider, the factory_context's initManager is
         // always valid, though the init manager may go away later when the listener goes away.
@@ -558,6 +564,7 @@ HttpConnectionManagerConfig::HttpConnectionManagerConfig(
     break;
   case envoy::extensions::filters::network::http_connection_manager::v3::HttpConnectionManager::
       RouteSpecifierCase::kRouteConfig:
+    //route_config_provider_manager:负责创建和管理route_config_provider_
     route_config_provider_ = route_config_provider_manager.createStaticRouteConfigProvider(
         config.route_config(), context_.serverFactoryContext(),
         context_.messageValidationVisitor());
@@ -755,6 +762,7 @@ HttpConnectionManagerConfig::HttpConnectionManagerConfig(
   }
 }
 
+// 创建HTTP协议解码器
 Http::ServerConnectionPtr HttpConnectionManagerConfig::createCodec(
     Network::Connection& connection, const Buffer::Instance& data,
     Http::ServerConnectionCallbacks& callbacks, Server::OverloadManager& overload_manager) {

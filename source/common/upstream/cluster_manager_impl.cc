@@ -1143,10 +1143,12 @@ void ClusterManagerImpl::updateClusterCounts() {
 ThreadLocalCluster* ClusterManagerImpl::getThreadLocalCluster(absl::string_view cluster) {
   ThreadLocalClusterManagerImpl& cluster_manager = *tls_;
 
+  // 确认这个cluster是否存在
   auto entry = cluster_manager.thread_local_clusters_.find(cluster);
   if (entry != cluster_manager.thread_local_clusters_.end()) {
     return entry->second.get();
   } else {
+    // 如果不存在就创建一个
     return cluster_manager.initializeClusterInlineIfExists(cluster);
   }
 }

@@ -32,11 +32,13 @@ std::unique_ptr<ConnectionHandler> getHandler(Event::Dispatcher& dispatcher, uin
 
 } // namespace
 
+// 创建 worker
 WorkerPtr ProdWorkerFactory::createWorker(uint32_t index, OverloadManager& overload_manager,
                                           OverloadManager& null_overload_manager,
                                           const std::string& worker_name) {
   Event::DispatcherPtr dispatcher(
       api_.allocateDispatcher(worker_name, overload_manager.scaledTimerFactory()));
+  // 获取 handler
   auto conn_handler = getHandler(*dispatcher, index, overload_manager, null_overload_manager);
   return std::make_unique<WorkerImpl>(tls_, hooks_, std::move(dispatcher), std::move(conn_handler),
                                       overload_manager, api_, stat_names_);
@@ -61,6 +63,7 @@ WorkerImpl::WorkerImpl(ThreadLocal::Instance& tls, ListenerHooks& hooks,
       [this](OverloadActionState state) { resetStreamsUsingExcessiveMemory(state); });
 }
 
+// worker 上的 Listener初始化
 void WorkerImpl::addListener(absl::optional<uint64_t> overridden_listener,
                              Network::ListenerConfig& listener, AddListenerCompletion completion,
                              Runtime::Loader& runtime, Random::RandomGenerator& random) {
@@ -101,6 +104,7 @@ void WorkerImpl::removeFilterChains(uint64_t listener_tag,
       });
 }
 
+// 启动worker
 void WorkerImpl::start(OptRef<GuardDog> guard_dog, const std::function<void()>& cb) {
   ASSERT(!thread_);
 
@@ -153,6 +157,7 @@ void WorkerImpl::threadRoutine(OptRef<GuardDog> guard_dog, const std::function<v
                                              dispatcher_->name(), *dispatcher_);
     }
   });
+  // 启动worker
   dispatcher_->run(Event::Dispatcher::RunType::Block);
   ENVOY_LOG(debug, "worker exited dispatch loop");
   if (guard_dog.has_value()) {

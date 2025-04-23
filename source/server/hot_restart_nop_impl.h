@@ -11,7 +11,7 @@ namespace Envoy {
 namespace Server {
 
 /**
- * No-op implementation of HotRestart.
+ * 热重启（HotRestart）的空操作（无实际功能）实现。
  */
 class HotRestartNopImpl : public Server::HotRestart {
 public:

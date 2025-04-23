@@ -306,8 +306,8 @@ protected:
   Buffer::Instance* output_buffer_ = nullptr; // Not owned
   Http::Code error_code_{Http::Code::BadRequest};
   const HeaderKeyFormatterConstPtr encode_only_header_key_formatter_;
-  HeaderString current_header_field_;
-  HeaderString current_header_value_;
+  HeaderString current_header_field_; // 记录header的字段名
+  HeaderString current_header_value_; // 记录header的字段值
   bool processing_trailers_ : 1;
   bool handling_upgrade_ : 1;
   bool reset_stream_called_ : 1;
@@ -378,17 +378,18 @@ private:
   CallbackResult onMessageComplete() override;
   void onChunkHeader(bool is_final_chunk) override;
 
+  //Envoy 对 HTTP1 请求的处理，采用了第三方开源库 http_parser
   // Internal implementations of ParserCallbacks methods,
   // and virtual methods for connection-specific implementations.
-  virtual Status onMessageBeginBase() PURE;
+  virtual Status onMessageBeginBase() PURE;       // 收到一个HTTP请求的开始
   virtual Status onUrlBase(const char* data, size_t length) PURE;
   virtual Status onStatusBase(const char* data, size_t length) PURE;
   Status onHeaderFieldImpl(const char* data, size_t length);
   Status onHeaderValueImpl(const char* data, size_t length);
   StatusOr<CallbackResult> onHeadersCompleteImpl();
-  virtual StatusOr<CallbackResult> onHeadersCompleteBase() PURE;
+  virtual StatusOr<CallbackResult> onHeadersCompleteBase() PURE;  // 收到完整的HTTP首部时调用
   StatusOr<CallbackResult> onMessageCompleteImpl();
-  virtual CallbackResult onMessageCompleteBase() PURE;
+  virtual CallbackResult onMessageCompleteBase() PURE;  // 收到整个完整的HTTP请求时调用
 
   // These helpers wrap *Impl() calls in the overrides of non-void
   // ParserCallbacks methods.

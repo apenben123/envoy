@@ -12,6 +12,7 @@
 namespace Envoy {
 namespace Server {
 
+// 构建 ActiveTcpListener
 ActiveTcpListener::ActiveTcpListener(Network::TcpConnectionHandler& parent,
                                      Network::ListenerConfig& config, Runtime::Loader& runtime,
                                      Random::RandomGenerator& random,
@@ -21,6 +22,7 @@ ActiveTcpListener::ActiveTcpListener(Network::TcpConnectionHandler& parent,
                                      ThreadLocalOverloadStateOptRef overload_state)
     : OwnedActiveStreamListenerBase(
           parent, parent.dispatcher(),
+          // 调用 parent 的 createListener, 外层(ConnectionHandlerImpl::addListener 里面) parent 传的是this
           parent.createListener(std::move(socket), *this, runtime, random, config, overload_state),
           config),
       tcp_conn_handler_(parent), connection_balancer_(connection_balancer),

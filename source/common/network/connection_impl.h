@@ -263,6 +263,11 @@ private:
   bool enable_close_through_filter_manager_ : 1;
 };
 
+/*
+ * ServerConnectionImpl 类主要用于处理服务端的连接。
+ * 当 Envoy 作为服务端接收来自客户端的连接请求时，ServerConnectionImpl 会对这些连接进行管理和处理。
+ * 它负责解析客户端发送的请求，包括请求头和请求体，同时处理与请求相关的各种协议和状态。
+*/
 class ServerConnectionImpl : public ConnectionImpl, virtual public ServerConnection {
 public:
   ServerConnectionImpl(Event::Dispatcher& dispatcher, ConnectionSocketPtr&& socket,
@@ -286,6 +291,8 @@ private:
 
 /**
  * libevent implementation of Network::ClientConnection.
+ * ClientConnectionImpl 类主要用于处理客户端的连接。
+ * 当 Envoy 作为客户端向其他服务发送请求时，ClientConnectionImpl 会负责建立与目标服务的连接、发送请求、接收响应等操作。
  */
 class ClientConnectionImpl : public ConnectionImpl, virtual public ClientConnection {
 public:

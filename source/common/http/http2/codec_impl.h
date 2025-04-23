@@ -861,12 +861,9 @@ private:
   }
 
   // Http::Connection
-  // The reason for overriding the dispatch method is to do flood mitigation only when
-  // processing data from downstream client. Doing flood mitigation when processing upstream
-  // responses makes clean-up tricky, which needs to be improved (see comments for the
-  // ClientConnectionImpl::checkProtocolConstraintsStatus method). The dispatch method on the
-  // ServerConnectionImpl objects is called only when processing data from the downstream client in
-  // the ConnectionManagerImpl::onData method.
+  // 重写 dispatch 方法的原因是，仅在处理来自下游客户端的数据时进行洪泛缓解（流量控制）。
+  // 在处理上游响应时进行洪泛缓解会使清理工作变得棘手，这一点需要改进（可参考 ClientConnectionImpl::checkProtocolConstraintsStatus 方法的注释）。
+  // 在 ConnectionManagerImpl::onData 方法中，仅在处理来自下游客户端的数据时，才会调用 ServerConnectionImpl 对象的 dispatch 方法。
   Http::Status dispatch(Buffer::Instance& data) override;
 
   ServerConnectionCallbacks& callbacks_;

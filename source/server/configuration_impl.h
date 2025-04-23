@@ -110,8 +110,7 @@ public:
 };
 
 /**
- * Implementation of Server::Configuration::Main that reads a configuration from
- * a JSON file.
+ * Server::Configuration::Main 的实现，它从一个 JSON 文件中读取配置信息。
  */
 class MainImpl : Logger::Loggable<Logger::Id::config>, public Main {
 public:

@@ -58,6 +58,7 @@ void LibeventScheduler::run(Dispatcher::RunType mode) {
     flag = EVLOOP_NO_EXIT_ON_EMPTY;
     break;
   }
+  // 启动libevent处理
   event_base_loop(libevent_.get(), flag);
 }
 

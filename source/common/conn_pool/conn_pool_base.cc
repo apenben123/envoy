@@ -363,9 +363,11 @@ void ConnPoolImplBase::onUpstreamReady() {
   while (!pending_streams_.empty() && !ready_clients_.empty()) {
     ActiveClientPtr& client = ready_clients_.front();
     ENVOY_CONN_LOG(debug, "attaching to next stream", *client);
+    // 此处即进行了绑定
     // Pending streams are pushed onto the front, so pull from the back.
     attachStreamToClient(*client, pending_streams_.back()->context());
     state_.decrPendingStreams(1);
+    // 从阻塞请求队列里面摘除，代表已经受到处理
     pending_streams_.pop_back();
   }
   if (!pending_streams_.empty()) {

@@ -130,6 +130,7 @@ void Filter::onALPN(const unsigned char* data, unsigned int len) {
   alpn_found_ = true;
 }
 
+// 对于https，会把TLS握手的时候保存的SNI写入 ActiveStream.requested_server_name_
 void Filter::onServername(absl::string_view name) {
   if (!name.empty()) {
     config_->stats().sni_found_.inc();

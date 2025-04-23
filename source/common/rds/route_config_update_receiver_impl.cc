@@ -19,6 +19,7 @@ void RouteConfigUpdateReceiverImpl::updateConfig(
                                         false /* not validate unknown cluster */);
   // If the above create config doesn't raise exception, update the
   // other cached config entries.
+  // 保存在 route_config_proto_
   route_config_proto_ = std::move(route_config_proto);
 }
 

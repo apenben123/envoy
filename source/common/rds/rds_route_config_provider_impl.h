@@ -14,8 +14,8 @@ namespace Envoy {
 namespace Rds {
 
 /**
- * Implementation of RouteConfigProvider that fetches the route configuration dynamically using
- * the subscription.
+ * 路由配置提供者
+ * RouteConfigProvider 的实现类，该类利用订阅机制动态获取路由配置 
  */
 class RdsRouteConfigProviderImpl : public RouteConfigProvider,
                                    Logger::Loggable<Logger::Id::router> {
@@ -41,8 +41,8 @@ private:
     ConfigConstSharedPtr config_;
   };
 
-  RdsRouteConfigSubscriptionSharedPtr subscription_;
-  RouteConfigUpdatePtr& config_update_info_;
+  RdsRouteConfigSubscriptionSharedPtr subscription_;  //路由配置订阅者, 向控制面订阅资源
+  RouteConfigUpdatePtr& config_update_info_;          //路由配置接受者, 负责接收控制面发来的资源
   ThreadLocal::TypedSlot<ThreadLocalConfig> tls_;
 };
 

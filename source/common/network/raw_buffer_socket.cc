@@ -13,12 +13,21 @@ void RawBufferSocket::setTransportSocketCallbacks(TransportSocketCallbacks& call
   callbacks_ = &callbacks;
 }
 
+/*
+获取数据的入口 
+ConnectionImpl::onReadReady() {
+  ...
+  IoResult result = transport_socket_->doRead(*read_buffer_); 处调用
+  '''
+}
+*/
 IoResult RawBufferSocket::doRead(Buffer::Instance& buffer) {
   PostIoAction action = PostIoAction::KeepOpen;
   uint64_t bytes_read = 0;
   bool end_stream = false;
   absl::optional<Api::IoError::IoErrorCode> err = absl::nullopt;
   do {
+    //  ConnectionImpl callbacks_  循环取read buffer区
     Api::IoCallUint64Result result = callbacks_->ioHandle().read(buffer, absl::nullopt);
 
     if (result.ok()) {

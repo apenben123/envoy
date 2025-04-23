@@ -70,6 +70,7 @@ void ConnectionImplUtility::updateBufferStats(uint64_t delta, uint64_t new_total
 
 std::atomic<uint64_t> ConnectionImpl::next_global_id_;
 
+// 连接实例 分服务端的连接和客户端的连接2种
 ConnectionImpl::ConnectionImpl(Event::Dispatcher& dispatcher, ConnectionSocketPtr&& socket,
                                TransportSocketPtr&& transport_socket,
                                StreamInfo::StreamInfo& stream_info, bool connected)
@@ -99,10 +100,11 @@ ConnectionImpl::ConnectionImpl(Event::Dispatcher& dispatcher, ConnectionSocketPt
     connecting_ = true;
   }
 
+  // epoll 边缘触发(edge-triggered)
   Event::FileTriggerType trigger = Event::PlatformDefaultTriggerType;
 
-  // We never ask for both early close and read at the same time. If we are reading, we want to
-  // consume all available data.
+  // 我们绝不同时请求提前关闭连接和进行读取操作。如果我们正在进行读取操作，我们希望能读取完所有可用的数据。
+  // 创建文件描述符(套接字), 利用了libevent对连接的读写事件进行监听，同时采用了epoll边缘触发的机制。
   socket_->ioHandle().initializeFileEvent(
       dispatcher_,
       [this](uint32_t events) {
@@ -422,6 +424,7 @@ void ConnectionImpl::onRead(uint64_t read_buffer_size) {
     read_end_stream_raised_ = true;
   }
 
+  // 调用 FilterManagerImpl::onRead .filter_manager_在创建连接实例的时候一起构造的
   filter_manager_.onRead();
 }
 
@@ -650,52 +653,61 @@ void ConnectionImpl::setFailureReason(absl::string_view failure_reason) {
   }
 }
 
+// 处理文件描述符(套接字)上的事件 
 void ConnectionImpl::onFileEvent(uint32_t events) {
+  // 创建一个作用域跟踪器，用于跟踪当前连接的作用域
   ScopeTrackerScopeState scope(this, this->dispatcher_);
   ENVOY_CONN_LOG(trace, "socket event: {}", *this, events);
 
+  // 检查是否存在立即错误事件（本地关闭或远程关闭）
   if (immediate_error_event_ == ConnectionEvent::LocalClose ||
       immediate_error_event_ == ConnectionEvent::RemoteClose) {
     if (bind_error_) {
       ENVOY_CONN_LOG(debug, "raising bind error", *this);
       // Update stats here, rather than on bind failure, to give the caller a chance to
       // setConnectionStats.
+      // 在这里更新统计信息，而不是在绑定失败时更新，以便给调用者一个设置连接统计信息的机会
       if (connection_stats_ && connection_stats_->bind_errors_) {
         connection_stats_->bind_errors_->inc();
       }
     } else {
       ENVOY_CONN_LOG(debug, "raising immediate error", *this);
     }
+    // 关闭套接字
     closeSocket(immediate_error_event_);
     return;
   }
 
+  // 检查是否收到关闭事件
   if (events & Event::FileReadyType::Closed) {
-    // We never ask for both early close and read at the same time. If we are reading, we want to
-    // consume all available data.
+    // 断言不会同时请求提前关闭和读取事件。如果正在读取，我们希望消费所有可用数据。
     ASSERT(!(events & Event::FileReadyType::Read));
+    // 记录调试日志，输出远程提前关闭信息
     ENVOY_CONN_LOG(debug, "remote early close", *this);
-    // If half-close is enabled, this is never activated.
-    // If half-close is disabled, there are two scenarios where this applies:
-    //    1. During the closeInternal(_) call.
-    //    2. When an early close is detected while the connection is read-disabled.
-    // Both situations allow the connection to bypass the filter manager's status since there will
-    // be data loss even in normal cases.
+    // 如果启用了半关闭，此情况不会触发。
+    // 如果禁用了半关闭，有两种情况适用：
+    //    1. 在 closeInternal(_) 调用期间。
+    //    2. 当连接被禁用读取时检测到提前关闭。
+    // 这两种情况都允许连接绕过过滤器管理器的状态，因为即使在正常情况下也会有数据丢失。
     closeSocket(ConnectionEvent::RemoteClose);
     return;
   }
 
+  // 检查是否收到写就绪事件
   if (events & Event::FileReadyType::Write) {
+    // 调用 onWriteReady 方法处理写就绪事件
     onWriteReady();
   }
 
-  // It's possible for a write event callback to close the socket (which will cause fd_ to be -1).
-  // In this case ignore read event processing.
+  // 写事件回调可能会关闭套接字（这会导致 fd_ 变为 -1）。
+  // 在这种情况下，忽略读事件处理。
   if (socket_->isOpen() && (events & Event::FileReadyType::Read)) {
+    // 调用 onReadReady 方法处理读就绪事件
     onReadReady();
   }
 }
 
+// 接收请求
 void ConnectionImpl::onReadReady() {
   ENVOY_CONN_LOG(trace, "read ready. dispatch_buffered_data={}", *this,
                  static_cast<int>(dispatch_buffered_data_));
@@ -704,78 +716,77 @@ void ConnectionImpl::onReadReady() {
 
   ASSERT(!connecting_);
 
-  // If it is closing through the filter manager, we either need to close the socket or go
-  // through the close(), so we prevent further reading from the socket when we are waiting
-  // for the connection close.
+  // 如果通过过滤器管理器进行关闭操作，我们要么关闭套接字，要么执行 close() 方法，
+  // 所以当我们等待连接关闭时，防止从套接字进一步读取数据
   if (enable_close_through_filter_manager_ && filter_manager_.pendingClose()) {
     return;
   }
 
-  // We get here while read disabled in two ways.
-  // 1) There was a call to setTransportSocketIsReadable(), for example if a raw buffer socket ceded
-  //    due to shouldDrainReadBuffer(). In this case we defer the event until the socket is read
-  //    enabled.
-  // 2) The consumer of connection data called readDisable(true), and instead of reading from the
-  //    socket we simply need to dispatch already read data.
+
+  // 当读取被禁用时，有两种情况会到达这里。
+  // 1) 调用了 setTransportSocketIsReadable()，例如如果原始缓冲区套接字由于 shouldDrainReadBuffer() 而放弃。
+  //    在这种情况下，我们将事件推迟到套接字启用读取时。
+  // 2) 连接数据的消费者调用了 readDisable(true)，并且我们只需分发已经读取的数据，而不是从套接字读取。
   if (read_disable_count_ != 0) {
-    // Do not clear transport_wants_read_ when returning early; the early return skips the transport
-    // socket doRead call.
+    // 提前返回时不要清除 transport_wants_read_; 提前返回会跳过传输套接字的 doRead 调用。
     if (latched_dispatch_buffered_data && filterChainWantsData()) {
+      // 调用 onRead 方法处理读取的数据
       onRead(read_buffer_->length());
     }
     return;
   }
-
-  // Clear transport_wants_read_ just before the call to doRead. This is the only way to ensure that
-  // the transport socket read resumption happens as requested; onReadReady() returns early without
-  // reading from the transport if the read buffer is above high watermark at the start of the
-  // method.
+  
+  // 在调用 doRead 之前清除 transport_wants_read_. 这是确保传输套接字按请求恢复读取的唯一方法；
+  // 如果在方法开始时读取缓冲区高于高水位线，onReadReady() 会提前返回而不读取传输数据。
   transport_wants_read_ = false;
+  // 调用传输套接字的 doRead 方法读取数据到 read_buffer_ 中 (核心读取数据的地方)
   IoResult result = transport_socket_->doRead(*read_buffer_);
+  // 获取读取缓冲区的新长度
   uint64_t new_buffer_size = read_buffer_->length();
+  // 更新读取缓冲区的统计信息
   updateReadBufferStats(result.bytes_processed_, new_buffer_size);
 
-  // The socket is closed immediately when receiving RST.
+  // 当接收到 RST 时，立即关闭套接字。
   if (result.err_code_.has_value() &&
       result.err_code_ == Api::IoError::IoErrorCode::ConnectionReset) {
     ENVOY_CONN_LOG(trace, "read: rst close from peer", *this);
+    // 设置检测到的关闭类型为远程重置
     setDetectedCloseType(DetectedCloseType::RemoteReset);
     if (result.bytes_processed_ != 0) {
+      // 调用 onRead 方法处理读取的数据
       onRead(new_buffer_size);
-      // In some cases, the transport socket could read data along with an RST (Reset) flag.
-      // We need to ensure this data is properly propagated to the terminal filter for proper
-      // handling. For more details, see #29616 and #28817.
+      // 在某些情况下，传输套接字可能会读取到带有 RST（重置）标志的数据。
+      // 我们需要确保这些数据被正确传播到终端过滤器进行处理。更多细节请参阅 #29616 和 #28817。
       closeThroughFilterManager(ConnectionCloseAction{ConnectionEvent::RemoteClose, true});
     } else {
-      // Otherwise no data was read, and close the socket directly.
+      // 否则没有读取到数据，直接关闭套接字
       closeSocket(Network::ConnectionEvent::RemoteClose);
     }
     return;
   }
 
-  // If this connection doesn't have half-close semantics, translate end_stream into
-  // a connection close.
+  // 如果此连接不支持半关闭语义，则将 end_stream 转换为连接关闭。
   if ((!enable_half_close_ && result.end_stream_read_)) {
     result.end_stream_read_ = false;
     result.action_ = PostIoAction::Close;
   }
 
+  // 更新 read_end_stream_ 标志
   read_end_stream_ |= result.end_stream_read_;
   if (result.bytes_processed_ != 0 || result.end_stream_read_ ||
       (latched_dispatch_buffered_data && read_buffer_->length() > 0)) {
-    // Skip onRead if no bytes were processed unless we explicitly want to force onRead for
-    // buffered data. For instance, skip onRead if the connection was closed without producing
-    // more data.
+    // 除非我们明确希望为缓冲数据强制调用 onRead，否则如果没有处理任何字节，则跳过 onRead。
+    // 例如，如果连接在没有产生更多数据的情况下关闭，则跳过 onRead。
     onRead(new_buffer_size);
   }
 
-  // The read callback may have already closed the connection.
+  // 读取回调可能已经关闭了连接。
   if (result.action_ == PostIoAction::Close || bothSidesHalfClosed()) {
     ENVOY_CONN_LOG(debug, "remote close", *this);
-    // This is the typical case where a socket read triggers a connection close.
-    // When half-close is disabled, the action_ will be set to close.
-    // When half-close is enabled, once both directions of the connection are closed,
-    // we need to ensure that the read data is properly propagated to the terminal filter.
+    // 这是套接字读取触发连接关闭的典型情况。
+    // 当禁用半关闭时，action_ 将被设置为关闭。
+    // 当启用半关闭时，一旦连接的两个方向都关闭，
+    // 我们需要确保读取的数据被正确传播到终端过滤器。
     closeThroughFilterManager(ConnectionCloseAction{ConnectionEvent::RemoteClose, true});
   }
 }

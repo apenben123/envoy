@@ -182,6 +182,7 @@ void ActiveTcpSocket::setDynamicTypedMetadata(const std::string& name,
   stream_info_->setDynamicTypedMetadata(name, value);
 }
 
+//连接初始化 & Read/Write Filter创建
 void ActiveTcpSocket::newConnection() {
   connected_ = true;
 
@@ -190,6 +191,7 @@ void ActiveTcpSocket::newConnection() {
 
   if (hand_off_restored_destination_connections_ &&
       socket_->connectionInfoProvider().localAddressRestored()) {
+    //通过 getBalancedHandlerByAddress寻找到实际的虚拟listener
     // Find a listener associated with the original destination address.
     new_listener =
         listener_.getBalancedHandlerByAddress(*socket_->connectionInfoProvider().localAddress());

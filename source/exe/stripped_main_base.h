@@ -62,6 +62,7 @@ public:
 
   void runServer() {
     ASSERT(options_.mode() == Server::Mode::Serve);
+    // 调用 InstanceBase::run();
     server_->run();
   }
 

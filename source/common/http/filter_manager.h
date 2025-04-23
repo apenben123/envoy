@@ -312,6 +312,7 @@ struct ActiveStreamDecoderFilter : public ActiveStreamFilterBase,
   // called here may change the content type, so we must check it before the call.
   FilterHeadersStatus decodeHeaders(RequestHeaderMap& headers, bool end_stream) {
     is_grpc_request_ = Grpc::Common::isGrpcRequestHeaders(headers);
+    // 最终调用的是StreamDecoderFilterSharedPtr类型的handler进行实际处理。这些filter通过前面ActiveStream进行DecodeHeaders的最开始的时候注入到了stream里面。
     FilterHeadersStatus status = handle_->decodeHeaders(headers, end_stream);
     return status;
   }

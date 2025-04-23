@@ -127,6 +127,7 @@ public:
   void initialize(Upstream::Host::CreateConnectionData& data, HttpConnPoolImplBase& parent) {
     real_host_description_ = data.host_description_;
     codec_client_ = parent.createCodecClient(data);
+    // 他会将ActiveClient注册监听各类连接事件。当有事件到达，则会唤起 onEvent 方法
     codec_client_->addConnectionCallbacks(*this);
     Upstream::ClusterTrafficStats& traffic_stats = *parent_.host()->cluster().trafficStats();
     codec_client_->setConnectionStats(
@@ -140,6 +141,7 @@ public:
   void close() override { codec_client_->close(); }
   virtual Http::RequestEncoder& newStreamEncoder(Http::ResponseDecoder& response_decoder) PURE;
   void onEvent(Network::ConnectionEvent event) override {
+    // 进一步触发 onConnectionEvent 方法
     parent_.onConnectionEvent(*this, codec_client_->connectionFailureReason(), event);
   }
   uint32_t numActiveStreams() const override { return codec_client_->numActiveRequests(); }

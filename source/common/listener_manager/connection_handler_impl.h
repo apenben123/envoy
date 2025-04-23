@@ -171,6 +171,7 @@ private:
 class ConnectionHandlerFactoryImpl : public ConnectionHandlerFactory {
 public:
   std::unique_ptr<ConnectionHandler>
+  // 创建 handler
   createConnectionHandler(Event::Dispatcher& dispatcher, absl::optional<uint32_t> worker_index,
                           OverloadManager& overload_manager,
                           OverloadManager& null_overload_manager) override {

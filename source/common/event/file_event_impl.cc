@@ -56,6 +56,14 @@ void FileEventImpl::assignEvents(uint32_t events, event_base* base) {
   ASSERT(dispatcher_.isThreadSafe());
   ASSERT(base != nullptr);
 
+  /*  事件持久性 EV_PERSIST
+　　    默认情况下，当一个“挂起”的event变为“激活”时（要么是因为fd准备好读或写，要么是超时时间到），那么在它的回调函数
+    执行之前，它就会变为“非挂起”状态。因此，如果希望再次使event变为“挂起”状态，可以在回调函数内部再次调用event_add函数。
+　　   如果event设置了EV_PERSIST标志，那么event就是“持久”的。这意味着event在回调函数激活的时候，依然保持“挂起”状态。
+    如果希望在回调函数中将event变为“非挂起”状态，则可以调用event_del函数。
+　　   当event的回调函数运行时，“持久”event的超时时间就会被重置。因此，如果某个event标志为EV_READ|EV_PERSIST，并且将
+    超时时间设置为5秒，则该event在下面的条件发生时，会变为“激活”：当该socket准备好读时； 距离上次event变为激活状态后，又过了5秒钟.
+  */
   enabled_events_ = events;
   event_assign(
       &raw_event_, base, fd_,

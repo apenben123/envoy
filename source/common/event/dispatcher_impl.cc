@@ -176,9 +176,11 @@ Network::ClientConnectionPtr DispatcherImpl::createClientConnection(
                                          std::move(transport_socket), options, transport_options);
 }
 
+// 创建文件描述符(套接字), 利用了libevent对连接的读写事件进行监听，同时采用了epoll边缘触发的机制。   
 FileEventPtr DispatcherImpl::createFileEvent(os_fd_t fd, FileReadyCb cb, FileTriggerType trigger,
                                              uint32_t events) {
   ASSERT(isThreadSafe());
+  // 底层基于event_assign和event_add
   return FileEventPtr{new FileEventImpl(
       *this, fd,
       [this, cb](uint32_t events) {
@@ -279,6 +281,7 @@ void DispatcherImpl::run(RunType type) {
   // not guarantee that events are run in any particular order. So even if we post() and call
   // event_base_once() before some other event, the other event might get called first.
   runPostCallbacks();
+  // 调用 LibeventScheduler::run
   base_scheduler_.run(type);
 }
 

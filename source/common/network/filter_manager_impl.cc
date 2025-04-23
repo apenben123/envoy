@@ -59,6 +59,7 @@ bool FilterManagerImpl::initializeReadFilters() {
   return true;
 }
 
+// 请求数据处理流程拼装
 void FilterManagerImpl::onContinueReading(ActiveReadFilter* filter,
                                           ReadBufferSource& buffer_source) {
   // Filter could return status == FilterStatus::StopIteration immediately, close the connection and
@@ -81,6 +82,7 @@ void FilterManagerImpl::onContinueReading(ActiveReadFilter* filter,
     }
     if (!(*entry)->initialized_) {
       (*entry)->initialized_ = true;
+      // 第一次访问则调用onNewConnection
       FilterStatus status = (*entry)->filter_->onNewConnection();
       if (status == FilterStatus::StopIteration || connection_.state() != Connection::State::Open) {
         return;
@@ -89,6 +91,11 @@ void FilterManagerImpl::onContinueReading(ActiveReadFilter* filter,
 
     StreamBuffer read_buffer = buffer_source.getReadBuffer();
     if (read_buffer.buffer.length() > 0 || read_buffer.end_stream) {
+      // 后续访问则调用onData
+      // 这里调用 onData  ;    ReadFilterSharedPtr filter_;
+      // ReadFilterSharedPtr = std::shared_ptr<ReadFilter>;
+      // ConnectionManagerImpl : public Network::ReadFilter
+      // 怎么过去的还不清楚. 先直接过去
       FilterStatus status = (*entry)->filter_->onData(read_buffer.buffer, read_buffer.end_stream);
       if (status == FilterStatus::StopIteration || connection_.state() != Connection::State::Open) {
         return;

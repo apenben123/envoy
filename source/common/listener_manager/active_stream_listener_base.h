@@ -82,6 +82,9 @@ public:
   virtual Network::BalancedConnectionHandlerOptRef
   getBalancedHandlerByAddress(const Network::Address::Instance& address) PURE;
 
+  // 回调时候主要做两件事情，
+  // 1. 构建出对应的Listener Accept Filter
+  // 2. 构建出 ServerConnection
   void onSocketAccepted(std::unique_ptr<ActiveTcpSocket> active_socket) {
     // Create and run the filters
     if (config_->filterChainFactory().createListenerFilterChain(*active_socket)) {

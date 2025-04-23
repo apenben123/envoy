@@ -31,6 +31,7 @@
 namespace Envoy {
 
 StrippedMainBase::CreateInstanceFunction createFunction() {
+  // 返回一个 lambda 表达式，该 lambda 表达式接受多个参数，用于创建服务器实例
   return
       [](Init::Manager& init_manager, const Server::Options& options,
          Event::TimeSystem& time_system, ListenerHooks& hooks, Server::HotRestart& restarter,
@@ -70,7 +71,8 @@ MainCommonBase::MainCommonBase(const Server::Options& options, Event::TimeSystem
   logging_context_ = std::make_unique<Logger::Context>(
       options_.logLevel(), options_.logFormat(), restarter_->logLock(), options_.logFormatEscaped(),
       options_.mode() == Server::Mode::Validate ? false : options_.enableFineGrainLogging());
-  init(time_system, listener_hooks, std::move(random_generator), std::move(process_context),
+  // 初始化
+    (time_system, listener_hooks, std::move(random_generator), std::move(process_context),
        createFunction());
 }
 
@@ -184,8 +186,8 @@ int MainCommon::main(int argc, char** argv, PostServerHook hook) {
     return EXIT_FAILURE;
   }
 
-  // Run the server listener loop outside try/catch blocks, so that unexpected exceptions
-  // show up as a core-dumps for easier diagnostics.
+  // 启动
+  // 在 try/catch 块之外运行服务器监听器循环，这样未预料到的异常会以核心转储（core-dumps）的形式呈现，便于进行诊断。
   return main_common->run() ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 

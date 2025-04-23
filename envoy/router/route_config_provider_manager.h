@@ -40,6 +40,7 @@ public:
    * @param init_manager the Init::Manager used to coordinate initialization of a the underlying RDS
    * subscription.
    */
+  //创建动态路由配置的provider
   virtual RouteConfigProviderSharedPtr createRdsRouteConfigProvider(
       const envoy::extensions::filters::network::http_connection_manager::v3::Rds& rds,
       Server::Configuration::ServerFactoryContext& factory_context, const std::string& stat_prefix,
@@ -52,6 +53,7 @@ public:
    * @param factory_context is the context to use for the route config provider.
    * @param validator is the message validator for route config.
    */
+  //创建静态路由配置的provider
   virtual RouteConfigProviderPtr
   createStaticRouteConfigProvider(const envoy::config::route::v3::RouteConfiguration& route_config,
                                   Server::Configuration::ServerFactoryContext& factory_context,

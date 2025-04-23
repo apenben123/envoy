@@ -13,6 +13,7 @@
  * deployment such as initializing signal handling. It calls main_common
  * after setting up command line options.
  */
+// 服务启动的总入口main函数
 int main(int argc, char** argv) {
 #ifdef WIN32
   Envoy::ServiceBase service;

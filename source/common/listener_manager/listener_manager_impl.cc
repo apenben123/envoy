@@ -368,6 +368,7 @@ ListenerManagerImpl::ListenerManagerImpl(Instance& server,
         });
   }
 
+  // 创建 workers_
   for (uint32_t i = 0; i < server.options().concurrency(); i++) {
     workers_.emplace_back(worker_factory.createWorker(
         i, server.overloadManager(), server.nullOverloadManager(), absl::StrCat("worker_", i)));
@@ -571,6 +572,7 @@ absl::StatusOr<bool> ListenerManagerImpl::addOrUpdateListenerInternal(
       (*existing_active_listener)->supportUpdateFilterChain(config, workers_started_)) {
     ENVOY_LOG(debug, "use in place update filter chain update path for listener name={} hash={}",
               name, hash);
+    // new 一个 listener
     auto listener_or_error =
         (*existing_active_listener)->newListenerWithFilterChain(config, workers_started_, hash);
     RETURN_IF_NOT_OK_REF(listener_or_error.status());
@@ -605,8 +607,8 @@ absl::StatusOr<bool> ListenerManagerImpl::addOrUpdateListenerInternal(
       *existing_active_listener = std::move(new_listener);
     }
   } else {
-    // We have no warming or active listener so we need to make a new one. What we do depends on
-    // whether workers have been started or not.
+    // 我们既没有处于预热状态的监听器，也没有处于活动状态的监听器，所以我们需要创建一个新的监听器。
+    // 而我们具体的操作取决于工作线程是否已经启动。
     RETURN_IF_NOT_OK(setNewOrDrainingSocketFactory(name, *new_listener));
     if (workers_started_) {
       new_listener->debugLog("add warming listener");
@@ -760,6 +762,8 @@ bool ListenerManagerImpl::doFinalPreWorkerListenerInit(ListenerImpl& listener) {
   });
 }
 
+//启动监听
+// 通过xDS或者静态配置，获得Envoy代理的监听器信息
 void ListenerManagerImpl::addListenerToWorker(Worker& worker,
                                               absl::optional<uint64_t> overridden_listener,
                                               ListenerImpl& listener,
@@ -955,13 +959,14 @@ absl::Status ListenerManagerImpl::startWorkers(OptRef<GuardDog> guard_dog,
     workers_waiting_to_run.DecrementCount();
   };
 
-  // We can not use "Cleanup" to simplify this logic here, because it results in a issue if Envoy is
-  // killed before workers are actually started. Specifically the AdminRequestGetStatsAndKill test
-  // case in main_common_test fails with ASAN error if we use "Cleanup" here.
+  // 我们不能在这里使用 “Cleanup” 来简化此逻辑，因为如果在工作线程实际启动之前 Envoy 就被终止，这会引发一个问题。
+  // 具体来说，如果我们在此处使用 “Cleanup”，main_common_test 中的 AdminRequestGetStatsAndKill 测试用例就会因地址 sanitizer （ASAN）错误而失败。
   const auto listeners_pending_init =
       std::make_shared<std::atomic<uint64_t>>(workers_.size() * active_listeners_.size());
   ASSERT(warming_listeners_.empty());
-  // We need to protect against inline deletion so have to use iterators directly.
+  // 我们需要防范内联删除操作，所以必须直接使用迭代器。
+  // 这里的 active_listeners_ 就是上一步骤(MainImpl::initialize 中 addOrUpdateListener) 
+  // ListenerManagerImpl::addOrUpdateListener->addOrUpdateListenerInternal() 加进去的
   for (auto listener_it = active_listeners_.begin(); listener_it != active_listeners_.end();) {
     auto& listener = *listener_it;
     listener_it++;
@@ -975,6 +980,7 @@ absl::Status ListenerManagerImpl::startWorkers(OptRef<GuardDog> guard_dog,
       continue;
     }
     for (const auto& worker : workers_) {
+      // 此处即会将所有listener绑定到所有worker身上。worker即服务的并发线程数。
       addListenerToWorker(*worker, absl::nullopt, *listener,
                           [this, listeners_pending_init, callback]() {
                             if (--(*listeners_pending_init) == 0) {
@@ -986,6 +992,7 @@ absl::Status ListenerManagerImpl::startWorkers(OptRef<GuardDog> guard_dog,
   }
   for (const auto& worker : workers_) {
     ENVOY_LOG(debug, "starting worker {}", i);
+    // 启动worker
     worker->start(guard_dog, worker_started_running);
     if (enable_dispatcher_stats_) {
       worker->initializeStats(*scope_);

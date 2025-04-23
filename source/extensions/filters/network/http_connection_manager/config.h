@@ -332,7 +332,7 @@ private:
   std::chrono::milliseconds stream_idle_timeout_;
   std::chrono::milliseconds request_timeout_;
   std::chrono::milliseconds request_headers_timeout_;
-  Router::RouteConfigProviderSharedPtr route_config_provider_;
+  Router::RouteConfigProviderSharedPtr route_config_provider_;  //路由配置提供者
   // used to get scope key, then scoped_routes_config_provider_ should be used to get the scoped
   // routes
   Router::ScopeKeyBuilderPtr scope_key_builder_;
@@ -391,7 +391,7 @@ class Utility {
 public:
   struct Singletons {
     std::shared_ptr<Http::TlsCachingDateProviderImpl> date_provider_;
-    Router::RouteConfigProviderManagerSharedPtr route_config_provider_manager_;
+    Router::RouteConfigProviderManagerSharedPtr route_config_provider_manager_;  //路由配置管理器
     std::shared_ptr<Config::ConfigProviderManager> scoped_routes_config_provider_manager_;
     Tracing::TracerManagerSharedPtr tracer_manager_;
     std::shared_ptr<FilterConfigProviderManager> filter_config_provider_manager_;

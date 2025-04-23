@@ -2210,6 +2210,8 @@ RouteMatcher::RouteMatcher(const envoy::config::route::v3::RouteConfiguration& r
   if (validate_clusters) {
     validation_clusters = factory_context.clusterManager().clusters();
   }
+  // 在构造RouteMatcher的时候会遍历 virtual_hosts 下的domains，
+  // 并根据通配符的位置和domain的长度分为4种类型
   for (const auto& virtual_host_config : route_config.virtual_hosts()) {
     VirtualHostSharedPtr virtual_host = std::make_shared<VirtualHostImpl>(
         virtual_host_config, global_route_config, factory_context, *vhost_scope_, validator,
@@ -2249,7 +2251,8 @@ RouteMatcher::RouteMatcher(const envoy::config::route::v3::RouteConfiguration& r
 }
 
 const VirtualHostImpl* RouteMatcher::findVirtualHost(const Http::RequestHeaderMap& headers) const {
-  // Fast path the case where we only have a default virtual host.
+  // 按照 virtual_hosts_ => wildcard_virtual_host_suffixes_ => wildcard_virtual_host_prefixes_ => default_virtual_host_ 的顺序查找
+  // 对于仅存在一个默认虚拟主机的情况，采用快速处理路径。
   if (virtual_hosts_.empty() && wildcard_virtual_host_suffixes_.empty() &&
       wildcard_virtual_host_prefixes_.empty()) {
     return default_virtual_host_.get();

@@ -37,8 +37,12 @@ struct RdsStats {
 };
 
 /**
- * A class that fetches the route configuration dynamically using the RDS API and updates them to
- * RDS config providers.
+ * 一个利用 RDS API 动态获取路由配置，并将其更新到 RDS 配置提供者的类。
+ * 这里的 “RDS” 通常指 “Route Discovery Service”（路由发现服务），“RDS API” 就是用于和该服务交互的应用程序编程接口。
+ * “RDS config providers” 指的是 RDS 配置提供者， * 负责提供或管理路由配置相关的内容。
+ * 整个类的功能是通过 RDS API 动态获取路由配置，然后更新到对应的配置提供者处。
+ * 
+ * 负责向控制面请求路由配置
  */
 class RdsRouteConfigSubscription : Envoy::Config::SubscriptionCallbacks,
                                    protected Logger::Loggable<Logger::Id::rds> {
@@ -90,7 +94,7 @@ private:
   virtual absl::Status afterProviderUpdate() { return absl::OkStatus(); }
 
 protected:
-  const std::string route_config_name_;
+  const std::string route_config_name_;  //想要获取的路由配置名称，在Envoy启动配置文件里指定
   // This scope must outlive the subscription_ below as the subscription has derived stats.
   Stats::ScopeSharedPtr scope_;
   Envoy::Config::SubscriptionPtr subscription_;

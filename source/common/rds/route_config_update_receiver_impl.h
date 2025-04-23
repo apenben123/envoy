@@ -9,6 +9,8 @@
 namespace Envoy {
 namespace Rds {
 
+// 负责接收控制面发来的动态路由配置，并更新成员变量 routeconfigproto_
+// 该类是一个接收器，用于保存通过RDS request获取到的路由配置。
 class RouteConfigUpdateReceiverImpl : public RouteConfigUpdateReceiver {
 public:
   RouteConfigUpdateReceiverImpl(ConfigTraits& config_traits, ProtoTraits& proto_traits,
@@ -20,6 +22,7 @@ public:
   void updateConfig(std::unique_ptr<Protobuf::Message>&& route_config_proto);
   void onUpdateCommon(const std::string& version_info);
 
+  // 更新路由配置
   // RouteConfigUpdateReceiver
   bool onRdsUpdate(const Protobuf::Message& rc, const std::string& version_info) override;
 

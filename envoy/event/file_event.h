@@ -47,7 +47,7 @@ constexpr FileTriggerType determinePlatformPreferredEventType() {
 #if defined(WIN32) || defined(FORCE_LEVEL_EVENTS)
   return FileTriggerType::EmulatedEdge;
 #else
-  return FileTriggerType::Edge;
+  return FileTriggerType::Edge; // epoll 边缘触发(edge-triggered)
 #endif
 }
 

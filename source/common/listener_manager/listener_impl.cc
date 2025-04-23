@@ -421,6 +421,7 @@ ListenerImpl::ListenerImpl(const envoy::config::listener::v3::Listener& config,
   }
 }
 
+// 构造listener
 ListenerImpl::ListenerImpl(ListenerImpl& origin,
                            const envoy::config::listener::v3::Listener& config,
                            const std::string& version_info, ListenerManagerImpl& parent,
@@ -558,9 +559,8 @@ ListenerImpl::buildInternalListener(const envoy::config::listener::v3::Listener&
         parent_.server_.singletonManager().getTyped<Network::InternalListenerRegistry>(
             "internal_listener_registry_singleton");
     if (internal_listener_registry == nullptr) {
-      // The internal listener registry may be uninitialized when in Validate mode.
-      // Hence we check the configuration directly to ensure the bootstrap extension
-      // InternalListener is present.
+      // 当处于验证（Validate）模式时，内部监听器注册表可能未被初始化。
+      // 因此，我们直接检查配置，以确保引导配置扩展中的内部监听器（InternalListener）配置项存在。
       if (absl::c_none_of(
               listener_factory_context_->serverFactoryContext().bootstrap().bootstrap_extensions(),
               [=](const auto& extension) {
@@ -1050,6 +1050,7 @@ bool ListenerImpl::supportUpdateFilterChain(const envoy::config::listener::v3::L
   return false;
 }
 
+// 创建listener
 absl::StatusOr<ListenerImplPtr>
 ListenerImpl::newListenerWithFilterChain(const envoy::config::listener::v3::Listener& config,
                                          bool workers_started, uint64_t hash) {

@@ -484,7 +484,7 @@ private:
     // snapshot will be cleared when the cached route is blocked. Because after that we will not
     // refresh the cached route and release this snapshot can help to release the memory when the
     // route configuration is updated frequently and the request is long-lived.
-    Router::ConfigConstSharedPtr snapped_route_config_;
+    Router::ConfigConstSharedPtr snapped_route_config_;  //缓存路由配置
     Router::ScopedConfigConstSharedPtr snapped_scoped_routes_config_;
     // This is used to track the route that has been cached in the request. And we will keep this
     // route alive until the request is finished.
@@ -613,7 +613,7 @@ private:
 
   enum class DrainState { NotDraining, Draining, Closing };
 
-  ConnectionManagerConfigSharedPtr config_;
+  ConnectionManagerConfigSharedPtr config_;  //HTTP连接管理器配置
   ConnectionManagerStats& stats_; // We store a reference here to avoid an extra stats() call on
                                   // the config in the hot path.
   ServerConnectionPtr codec_;

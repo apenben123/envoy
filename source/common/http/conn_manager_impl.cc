@@ -462,6 +462,7 @@ void ConnectionManagerImpl::handleCodecOverloadError(absl::string_view error) {
                        StreamInfo::CoreResponseFlag::OverloadManager);
 }
 
+//创建HTTP协议解码器
 void ConnectionManagerImpl::createCodec(Buffer::Instance& data) {
   ASSERT(!codec_);
   codec_ = config_->createCodec(read_callbacks_->connection(), data, *this, overload_manager_);
@@ -483,6 +484,7 @@ void ConnectionManagerImpl::createCodec(Buffer::Instance& data) {
   }
 }
 
+//HTTP请求入口
 Network::FilterStatus ConnectionManagerImpl::onData(Buffer::Instance& data, bool) {
   requests_during_dispatch_count_ = 0;
   if (!codec_) {
@@ -492,7 +494,9 @@ Network::FilterStatus ConnectionManagerImpl::onData(Buffer::Instance& data, bool
       handleCodecOverloadError("onData codec creation overload");
       return Network::FilterStatus::StopIteration;
     }
+
     // Http3 codec should have been instantiated by now.
+    // 创建HTTP协议解码器
     createCodec(data);
   }
 
@@ -500,6 +504,7 @@ Network::FilterStatus ConnectionManagerImpl::onData(Buffer::Instance& data, bool
   do {
     redispatch = false;
 
+    //驱动解码器
     const Status status = codec_->dispatch(data);
 
     if (isBufferFloodError(status) || isInboundFramesWithEmptyPayloadError(status)) {
@@ -809,6 +814,7 @@ namespace {
 constexpr absl::string_view kRouteFactoryName = "envoy.route_config_update_requester.default";
 } // namespace
 
+// HTTP 连接管理器在收到 HTTP 请求时，会首先创建一个 ActiveStream 对象，负责处理本次Request-Response 交互。完成本次交互后，会将该 ActiveStream 对象销毁。
 ConnectionManagerImpl::ActiveStream::ActiveStream(ConnectionManagerImpl& connection_manager,
                                                   uint32_t buffer_limit,
                                                   Buffer::BufferMemoryAccountSharedPtr account)
@@ -1180,55 +1186,62 @@ void ConnectionManagerImpl::ActiveStream::maybeRecordLastByteReceived(bool end_s
   }
 }
 
-// Ordering in this function is complicated, but important.
-//
-// We want to do minimal work before selecting route and creating a filter
-// chain to maximize the number of requests which get custom filter behavior,
-// e.g. registering access logging.
-//
-// This must be balanced by doing sanity checking for invalid requests (one
-// can't route select properly without full headers), checking state required to
-// serve error responses (connection close, head requests, etc), and
-// modifications which may themselves affect route selection.
+// 此函数中的顺序很复杂，但却至关重要。
+// 
+// 在选择路由和创建过滤器链之前，我们希望只进行最少的工作，以便让尽可能多的请求能获得自定义过滤器的处理行为，
+// 例如，进行访问日志的注册操作。
+// 
+// 这就必须与对无效请求进行合理性检查相权衡（如果没有完整的请求头，就无法正确地选择路由），检查处理错误响应所需的状态（连接关闭、HEAD 请求等），
+// 以及那些本身可能会影响路由选择的修改操作。
 void ConnectionManagerImpl::ActiveStream::decodeHeaders(RequestHeaderMapSharedPtr&& headers,
                                                         bool end_stream) {
+  //1. 日志记录与基本设置
   ENVOY_STREAM_LOG(debug, "request headers complete (end_stream={}):\n{}", *this, end_stream,
                    *headers);
-  // We only want to record this when reading the headers the first time, not when recreating
-  // a stream.
+  // 我们只希望在首次读取请求头时记录这一点，而不是在重新创建流的时候记录。
   if (!filter_manager_.hasLastDownstreamByteReceived()) {
     filter_manager_.streamInfo().downstreamTiming().onLastDownstreamHeaderRxByteReceived(
         connection_manager_.dispatcher_->timeSource());
   }
+  // 创建一个作用域跟踪状态对象，用于跟踪当前流的作用域。
   ScopeTrackerScopeState scope(this,
                                connection_manager_.read_callbacks_->connection().dispatcher());
+  // 将传入的请求头指针赋值给 request_headers_
   request_headers_ = std::move(headers);
+  // 并通知过滤器管理器请求头已初始化。
   filter_manager_.requestHeadersInitialized();
   if (request_header_timer_ != nullptr) {
     request_header_timer_->disableTimer();
     request_header_timer_.reset();
   }
 
+  // 2. 连接关闭与协议设置：
   // Both shouldDrainConnectionUponCompletion() and is_head_request_ affect local replies: set them
   // as early as possible.
+  // 获取当前连接的协议类型
   const Protocol protocol = connection_manager_.codec_->protocol();
+  // 如果请求头表明需要关闭连接，则设置流信息中的连接关闭标志。
   if (HeaderUtility::shouldCloseConnection(protocol, *request_headers_)) {
     // Only mark the connection to be closed if the request indicates so. The connection might
     // already be marked so before this step, in which case if shouldCloseConnection() returns
     // false, the stream info value shouldn't be overridden.
     filter_manager_.streamInfo().setShouldDrainConnectionUponCompletion(true);
   }
-
+  // 设置流信息中的协议类型。
   filter_manager_.streamInfo().protocol(protocol);
 
+  // 3. 流结束处理与请求头验证：
   // We end the decode here to mark that the downstream stream is complete.
+  // 根据流结束标志记录最后一个字节的接收情况。
   maybeRecordLastByteReceived(end_stream);
-
+  // 验证请求头的有效性，如果验证失败则记录日志并返回，不再进行后续处理。
   if (!validateHeaders()) {
     ENVOY_STREAM_LOG(debug, "request headers validation failed\n{}", *this, *request_headers_);
     return;
   }
 
+  // 4. 路由配置获取
+  // 根据连接管理器的配置情况，获取相应的路由配置信息，包括普通路由配置和作用域路由配置。
   // We need to snap snapped_route_config_ here as it's used in mutateRequestHeaders later.
   if (connection_manager_.config_->isRoutable()) {
     if (connection_manager_.config_->routeConfigProvider() != nullptr) {
@@ -1243,13 +1256,15 @@ void ConnectionManagerImpl::ActiveStream::decodeHeaders(RequestHeaderMapSharedPt
     snapped_route_config_ = connection_manager_.config_->routeConfigProvider()->configCast();
   }
 
+  // 5. 过载处理：
   // Drop new requests when overloaded as soon as we have decoded the headers.
+  // 判断当前请求是否因过载而应被丢弃，
   const bool drop_request_due_to_overload =
       (connection_manager_.accept_new_http_stream_ != nullptr &&
        connection_manager_.accept_new_http_stream_->shouldShedLoad()) ||
       connection_manager_.random_generator_.bernoulli(
           connection_manager_.overload_stop_accepting_requests_ref_.value());
-
+  // 如果是则跳过过滤器链的创建，记录统计信息，并发送本地错误回复。
   if (drop_request_due_to_overload) {
     // In this one special case, do not create the filter chain. If there is a risk of memory
     // overload it is more important to avoid unnecessary allocation than to create the filters.
@@ -1267,6 +1282,8 @@ void ConnectionManagerImpl::ActiveStream::decodeHeaders(RequestHeaderMapSharedPt
     return;
   }
 
+  // 6. Expect 头处理：
+  // 如果配置不代理 100 Continue，且请求头包含 Expect: 100-continue，则直接发送 100 Continue 响应，并移除请求头中的 Expect 字段。
   if (!connection_manager_.config_->proxy100Continue() && request_headers_->Expect() &&
       // The Expect field-value is case-insensitive.
       // https://tools.ietf.org/html/rfc7231#section-5.1.1
@@ -1280,10 +1297,12 @@ void ConnectionManagerImpl::ActiveStream::decodeHeaders(RequestHeaderMapSharedPt
     request_headers_->removeExpect();
   }
 
+  // 7. 用户代理初始化与请求头检查：
+  // 从请求头中初始化用户代理信息。
   connection_manager_.user_agent_.initializeFromHeaders(*request_headers_,
                                                         connection_manager_.stats_.prefixStatName(),
                                                         connection_manager_.stats_.scope_);
-
+  // 如果请求头中没有 Host 字段，则发送 Bad Request 错误回复。
   if (!request_headers_->Host()) {
     // Require host header. For HTTP/1.1 Host has already been translated to :authority.
     sendLocalReply(Code::BadRequest, "", nullptr, absl::nullopt,
@@ -1291,6 +1310,9 @@ void ConnectionManagerImpl::ActiveStream::decodeHeaders(RequestHeaderMapSharedPt
     return;
   }
 
+  // 8. 请求头有效性检查与路径相关检查：
+  // 这部分代码包含多个检查逻辑，如检查请求头是否符合规范、路径是否存在、路径是否正确（针对 CONNECT 和 CONNECT-UDP 请求）、路径是否为相对路径等。
+  // 如果检查不通过，则发送相应的错误回复。
   // Apply header sanity checks.
   absl::optional<std::reference_wrapper<const absl::string_view>> error =
       HeaderUtility::requestHeadersValid(*request_headers_);
@@ -1329,6 +1351,8 @@ void ConnectionManagerImpl::ActiveStream::decodeHeaders(RequestHeaderMapSharedPt
     return;
   }
 
+  // 9. 路径和主机名规范化：
+  // 在非 UHV 模式下，对请求路径进行规范化处理，并根据处理结果进行相应的错误回复或重定向操作。
 #ifndef ENVOY_ENABLE_UHV
   // In UHV mode path normalization is done in the UHV
   // Path sanitization should happen before any path access other than the above sanity check.
@@ -1357,6 +1381,8 @@ void ConnectionManagerImpl::ActiveStream::decodeHeaders(RequestHeaderMapSharedPt
 
   ASSERT(action == ConnectionManagerUtility::NormalizePathAction::Continue);
 #endif
+  // 10. 主机名和端口处理：
+  // 对主机名进行规范化处理，并在特定情况下（CONNECT 请求且端口有变化），将原始连接端口信息存储到过滤器状态中。
   auto optional_port = ConnectionManagerUtility::maybeNormalizeHost(
       *request_headers_, *connection_manager_.config_, localPort());
   if (optional_port.has_value() &&
@@ -1366,7 +1392,9 @@ void ConnectionManagerImpl::ActiveStream::decodeHeaders(RequestHeaderMapSharedPt
         std::make_unique<Router::OriginalConnectPort>(optional_port.value()),
         StreamInfo::FilterState::StateType::ReadOnly, StreamInfo::FilterState::LifeSpan::Request);
   }
-
+  
+  // 11. 请求头修改与 IP 检测
+  // 在首次处理请求头时，对请求头进行修改操作，并进行 IP 检测。如果 IP 检测失败，则拒绝请求并发送错误回复。
   if (!state_.is_internally_created_) { // Only sanitize headers on first pass.
     // Modify the downstream remote address depending on configuration and headers.
     const auto mutate_result = ConnectionManagerUtility::mutateRequestHeaders(
@@ -1388,25 +1416,30 @@ void ConnectionManagerImpl::ActiveStream::decodeHeaders(RequestHeaderMapSharedPt
   }
   ASSERT(filter_manager_.streamInfo().downstreamAddressProvider().remoteAddress() != nullptr);
 
+  // 12. 路由匹配与过滤器链创建：
   ASSERT(!cached_route_);
+  // 这边会进行route的匹配，更新缓存的路由信息 cached_route_ 。route->match
   refreshCachedRoute();
-
-  if (!state_.is_internally_created_) { // Only mutate tracing headers on first pass.
+  // 在首次处理时，修改追踪相关的请求头。
+  if (!state_.is_internally_created_) {
     filter_manager_.streamInfo().setTraceReason(
         ConnectionManagerUtility::mutateTracingRequestHeader(
             *request_headers_, connection_manager_.runtime_, *connection_manager_.config_,
             cached_route_.value().get()));
   }
-
+  // 设置流信息中的请求头，并创建下游过滤器链。
   filter_manager_.streamInfo().setRequestHeaders(*request_headers_);
   const FilterManager::CreateChainResult create_chain_result =
       filter_manager_.createDownstreamFilterChain();
+  // 如果过滤器链创建过程中接受了协议升级，则记录相关统计信息。
   if (create_chain_result.upgradeAccepted()) {
     connection_manager_.stats_.named_.downstream_cx_upgrades_total_.inc();
     connection_manager_.stats_.named_.downstream_cx_upgrades_active_.inc();
     state_.successful_upgrade_ = true;
   }
 
+  // 13. 访问日志记录与后续处理：
+  // 如果配置要求在新请求时刷新访问日志，则记录访问日志。进行请求追踪操作。
   if (connection_manager_.config_->flushAccessLogOnNewRequest()) {
     log(AccessLog::AccessLogType::DownstreamStart);
   }
@@ -1429,20 +1462,23 @@ void ConnectionManagerImpl::ActiveStream::decodeHeaders(RequestHeaderMapSharedPt
     // Allow non websocket requests to go through websocket enabled routes.
   }
 
-  // Check if tracing is enabled.
+  // 进行trace埋点
   if (connection_manager_tracing_config_.has_value()) {
     traceRequest();
   }
 
+  // 根据连接管理器的配置，决定是否将请求代理推迟到下一个 I/O 周期，
   ENVOY_EXECUTION_SCOPE(trackedStream(), active_span_.get());
   if (!connection_manager_.shouldDeferRequestProxyingToNextIoCycle()) {
+    // 并调用过滤器管理器(DownstreamFilterManager : public FilterManager)的 decodeHeaders 方法处理请求头。
     filter_manager_.decodeHeaders(*request_headers_, end_stream);
   } else {
     state_.deferred_to_next_io_iteration_ = true;
     state_.deferred_end_stream_ = end_stream;
   }
 
-  // Reset it here for both global and overridden cases.
+  // 在此处针对 global 和 overridden 的情况都将其重置。
+  // 重置一下Idle定时任务，将请求超时的Stream进行回收。
   resetIdleTimer();
 }
 

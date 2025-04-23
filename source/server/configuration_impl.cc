@@ -102,7 +102,7 @@ StatsConfigImpl::StatsConfigImpl(const envoy::config::bootstrap::v3::Bootstrap& 
 }
 
 absl::Status MainImpl::initialize(const envoy::config::bootstrap::v3::Bootstrap& bootstrap,
-                                  Instance& server,
+                                  Instance& server, // Envoy::Server::InstanceBase
                                   Upstream::ClusterManagerFactory& cluster_manager_factory) {
   // In order to support dynamic configuration of tracing providers,
   // a former server-wide Tracer singleton has been replaced by
@@ -136,17 +136,20 @@ absl::Status MainImpl::initialize(const envoy::config::bootstrap::v3::Bootstrap&
   status = cluster_manager_->initialize(bootstrap);
   RETURN_IF_NOT_OK(status);
 
+  // const ::envoy::config::listener::v3::Listener& listeners(int index) const;
   const auto& listeners = bootstrap.static_resources().listeners();
   ENVOY_LOG(info, "loading {} listener(s)", listeners.size());
+  // 从bootstrap配置（yaml文件）中提取listener配置，并依次进行添加操作。
+  // 最终会添加入ListenerManager::active_listeners_ vector中，供在第二阶段进行真实listener的初始化并启动。
   for (ssize_t i = 0; i < listeners.size(); i++) {
     ENVOY_LOG(debug, "listener #{}:", i);
     absl::StatusOr<bool> update_or_error =
+        // addOrUpdateListener(const envoy::config::listener::v3::Listener& config,
         server.listenerManager().addOrUpdateListener(listeners[i], "", false);
     RETURN_IF_NOT_OK_REF(update_or_error.status());
   }
   RETURN_IF_NOT_OK(initializeWatchdogs(bootstrap, server));
-  // This has to happen after ClusterManager initialization, as it depends on config from
-  // ClusterManager.
+  // 这一步操作必须在集群管理器（ ClusterManager ）初始化之后进行，因为它依赖于集群管理器提供的配置信息。
   return initializeStatsConfig(bootstrap, server);
 }
 

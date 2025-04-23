@@ -35,6 +35,7 @@ void ActiveStreamListenerBase::emitLogs(Network::ListenerConfig& config,
   }
 }
 
+// 连接初始化
 void ActiveStreamListenerBase::newConnection(Network::ConnectionSocketPtr&& socket,
                                              std::unique_ptr<StreamInfo::StreamInfo> stream_info) {
   // Find matching filter chain.
@@ -56,6 +57,7 @@ void ActiveStreamListenerBase::newConnection(Network::ConnectionSocketPtr&& sock
       std::make_shared<FilterChainInfoImpl>(filter_chain->name()));
 
   auto transport_socket = filter_chain->transportSocketFactory().createDownstreamTransportSocket();
+  // 创建ServerConnection
   auto server_conn_ptr = dispatcher().createServerConnection(
       std::move(socket), std::move(transport_socket), *stream_info);
   if (const auto timeout = filter_chain->transportSocketConnectTimeout();
@@ -65,6 +67,7 @@ void ActiveStreamListenerBase::newConnection(Network::ConnectionSocketPtr&& sock
   }
   server_conn_ptr->setBufferLimits(config_->perConnectionBufferLimitBytes());
   RELEASE_ASSERT(server_conn_ptr->connectionInfoProvider().remoteAddress() != nullptr, "");
+  // 创建真正的Read/Write Filter
   const bool empty_filter_chain = !config_->filterChainFactory().createNetworkFilterChain(
       *server_conn_ptr, filter_chain->networkFilterFactories());
   if (empty_filter_chain) {

@@ -684,7 +684,8 @@ absl::Status InstanceBase::initializeOrThrow(Network::Address::InstanceConstShar
         Config::ServerExtensionValues::get().DEFAULT_LISTENER);
   }
 
-  // Workers get created first so they register for thread local updates.
+  // 初始化ListenerManager
+  // 首先创建工作线程，这样它们就能注册以接收线程本地数据的更新。
   listener_manager_ = listener_manager_factory->createListenerManager(
       *this, nullptr, worker_factory_, bootstrap_.enable_dispatcher_stats(), quic_stat_names_);
 
@@ -772,10 +773,8 @@ absl::Status InstanceBase::initializeOrThrow(Network::Address::InstanceConstShar
     bootstrap_extension->onWorkerThreadInitialized();
   }
 
-  // Now the configuration gets parsed. The configuration may start setting
-  // thread local data per above. See MainImpl::initialize() for why ConfigImpl
-  // is constructed as part of the InstanceBase and then populated once
-  // cluster_manager_factory_ is available.
+  // Configuration::MainImpl config_; 现在开始解析配置。根据上述内容，该配置可能会开始设置线程本地数据。
+  // 关于为何 ConfigImpl 作为 InstanceBase 的一部分被构造，然后在 cluster_manager_factory_ 可用时再进行填充，请参考 MainImpl::initialize() 函数的相关内容。
   RETURN_IF_NOT_OK(config_.initialize(bootstrap_, *this, *cluster_manager_factory_));
 
   // Instruct the listener manager to create the LDS provider if needed. This must be done later
@@ -875,9 +874,13 @@ void InstanceBase::onRuntimeReady() {
   }
 }
 
+// 会进行真实网络级别Listener的初始化（基于上文提到的ListenerManager中的ListenerConfig数组active_listeners）
 void InstanceBase::startWorkers() {
-  // The callback will be called after workers are started.
+  // startWorker即会进行eventloop
+
+  // 该回调函数将在工作线程启动之后被调用。
   THROW_IF_NOT_OK(
+      // 启动worker
       listener_manager_->startWorkers(makeOptRefFromPtr(worker_guard_dog_.get()), [this]() {
         if (isShutdown()) {
           return;
@@ -999,8 +1002,8 @@ RunHelper::RunHelper(Instance& instance, const Options& options, Event::Dispatch
 }
 
 void InstanceBase::run() {
-  // RunHelper exists primarily to facilitate testing of how we respond to early shutdown during
-  // startup (see RunHelperTest in server_test.cc).
+  // RunHelper 存在的主要目的是为了便于测试在启动过程中我们对早期关闭操作的响应方式
+  // （请查看 server_test.cc 中的 RunHelperTest 测试用例）。
   const auto run_helper =
       RunHelper(*this, options_, *dispatcher_, clusterManager(), access_log_manager_, init_manager_,
                 overloadManager(), nullOverloadManager(), [this] {

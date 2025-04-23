@@ -120,7 +120,7 @@ build_envoy() {
     # ​​优化构建​​: 若需要发布优化版本，可添加 -c opt 参数: 会增加编译时间
     
     log 32 INFO "开始构建Envoy..."
-    log 33 NOTE "编译选项：禁用悬垂指针警告"
+    log 33 NOTE "编译选项：禁用tcmalloc"
     
     local build_flags=(
         "--disk_cache=${BAZEL_CACHE_DIR}"

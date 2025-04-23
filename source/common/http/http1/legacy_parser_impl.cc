@@ -25,6 +25,7 @@ ParserStatus intToStatus(int rc) {
 
 } // namespace
 
+// 利用 http_parser 进行 http 解析的 callback
 class LegacyHttpParserImpl::Impl {
 public:
   Impl(http_parser_type type) {
@@ -34,7 +35,9 @@ public:
 
   Impl(http_parser_type type, void* data) : Impl(type) {
     parser_.data = data;
+    // settings_ 初始化了 parse 各个阶段的 callbacks
     settings_ = {
+        // 收到一个HTTP请求的开始
         [](http_parser* parser) -> int {
           auto* conn_impl = static_cast<ParserCallbacks*>(parser->data);
           return static_cast<int>(conn_impl->onMessageBegin());
@@ -47,6 +50,7 @@ public:
           auto* conn_impl = static_cast<ParserCallbacks*>(parser->data);
           return static_cast<int>(conn_impl->onStatus(at, length));
         },
+        // onHeaderField,onHeaderValue 迭代添加header到current_header_map_中
         [](http_parser* parser, const char* at, size_t length) -> int {
           auto* conn_impl = static_cast<ParserCallbacks*>(parser->data);
           return static_cast<int>(conn_impl->onHeaderField(at, length));
@@ -55,6 +59,7 @@ public:
           auto* conn_impl = static_cast<ParserCallbacks*>(parser->data);
           return static_cast<int>(conn_impl->onHeaderValue(at, length));
         },
+        // 解析完最后一个请求头后会执行 onHeadersComplete
         [](http_parser* parser) -> int {
           auto* conn_impl = static_cast<ParserCallbacks*>(parser->data);
           return static_cast<int>(conn_impl->onHeadersComplete());
@@ -63,6 +68,7 @@ public:
           static_cast<ParserCallbacks*>(parser->data)->bufferBody(at, length);
           return 0;
         },
+        // 收到整个完整的HTTP请求时调用
         [](http_parser* parser) -> int {
           auto* conn_impl = static_cast<ParserCallbacks*>(parser->data);
           return static_cast<int>(conn_impl->onMessageComplete());
@@ -81,6 +87,7 @@ public:
   }
 
   size_t execute(const char* slice, int len) {
+    // 执行解析
     return http_parser_execute(&parser_, &settings_, slice, len);
   }
 

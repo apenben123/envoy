@@ -898,6 +898,7 @@ public:
 
   /**
    * @return const std::string& the upstream cluster that owns the route.
+   * 返回后端集群的名称
    */
   virtual const std::string& clusterName() const PURE;
 
