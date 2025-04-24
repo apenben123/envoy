@@ -191,7 +191,7 @@ void ActiveTcpSocket::newConnection() {
 
   if (hand_off_restored_destination_connections_ &&
       socket_->connectionInfoProvider().localAddressRestored()) {
-    //通过 getBalancedHandlerByAddress寻找到实际的虚拟listener
+    //通过 getBalancedHandlerByAddress 寻找到实际的虚拟listener
     // Find a listener associated with the original destination address.
     new_listener =
         listener_.getBalancedHandlerByAddress(*socket_->connectionInfoProvider().localAddress());

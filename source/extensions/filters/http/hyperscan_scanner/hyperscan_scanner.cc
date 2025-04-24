@@ -1,13 +1,16 @@
 #include "source/extensions/filters/http/hyperscan_scanner/hyperscan_scanner.h"
+#include <google/protobuf/text_format.h>
+#include "source/common/protobuf/utility.h"
 
 namespace Envoy {
 namespace Extensions {
 namespace HttpFilters {
 namespace HyperscanScanner {
 
+
 HyperscanFilter::HyperscanFilter(const HyperscanScannerConfig& config) {
 
-    ENVOY_LOG(info, "Loading {} patterns from config", config.patterns().size());
+    ENVOY_LOG(info, "Loading {} patterns from config. {}", config.patterns().size(), MessageUtil::toTextProto(config));
     
     try {
         // 1. 加载规则

@@ -477,6 +477,7 @@ ListenerImpl::ListenerImpl(ListenerImpl& origin,
   SET_AND_RETURN_IF_NOT_OK(validateConfig(), creation_status);
   SET_AND_RETURN_IF_NOT_OK(createListenerFilterFactories(config), creation_status);
   SET_AND_RETURN_IF_NOT_OK(validateFilterChains(config), creation_status);
+  // 构建过滤器链
   SET_AND_RETURN_IF_NOT_OK(buildFilterChains(config), creation_status);
   SET_AND_RETURN_IF_NOT_OK(buildInternalListener(config), creation_status);
   if (socket_type_ == Network::Socket::Type::Stream) {

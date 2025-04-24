@@ -72,7 +72,7 @@ MainCommonBase::MainCommonBase(const Server::Options& options, Event::TimeSystem
       options_.logLevel(), options_.logFormat(), restarter_->logLock(), options_.logFormatEscaped(),
       options_.mode() == Server::Mode::Validate ? false : options_.enableFineGrainLogging());
   // 初始化
-    (time_system, listener_hooks, std::move(random_generator), std::move(process_context),
+  init(time_system, listener_hooks, std::move(random_generator), std::move(process_context),
        createFunction());
 }
 

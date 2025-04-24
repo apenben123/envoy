@@ -227,13 +227,11 @@ class HttpFilterConfigFactoryBase : public ProtocolOptionsFactory {
 public:
   ~HttpFilterConfigFactoryBase() override = default;
 
-  /**
-   * @return ProtobufTypes::MessagePtr create an empty virtual host, route, or weighted
-   *         cluster-local config proto message for v2. The filter config, which arrives in an
-   *         opaque message, will be parsed into this empty proto. By default, this method
-   *         returns the same value as createEmptyConfigProto, and can be optionally overridden
-   *         in implementations.
-   */
+  /*
+  * @return ProtobufTypes::MessagePtr 创建一个空的虚拟主机、路由或用于 v2 版本的带权重的集群本地配置协
+  *         议缓冲区消息。以不透明消息形式传入的过滤器配置将被解析到这个空的协议缓冲区中。默认情况下，此
+  *         方法返回的值与 createEmptyConfigProto 方法返回的值相同，并且在具体实现中可以有选择地重写此方法。
+  */
   virtual ProtobufTypes::MessagePtr createEmptyRouteConfigProto() {
     return createEmptyConfigProto();
   }

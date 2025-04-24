@@ -122,7 +122,7 @@ private:
 };
 
 /**
- * Implementation of FilterChainManager. It owns and exchange filter chains.
+ * FilterChainManager（过滤器链管理器）的实现。它拥有并对过滤器链进行交换操作。
  */
 class FilterChainManagerImpl : public Network::FilterChainManager,
                                public FilterChainFactoryContextCreator,
@@ -148,8 +148,7 @@ public:
   const Network::FilterChain* findFilterChain(const Network::ConnectionSocket& socket,
                                               const StreamInfo::StreamInfo& info) const override;
 
-  // Add all filter chains into this manager. During the lifetime of FilterChainManagerImpl this
-  // should be called at most once.
+  // 将所有的过滤器链添加到这个管理器中。在 FilterChainManagerImpl 的生命周期内，这个操作最多应被调用一次。
   absl::Status addFilterChains(
       const xds::type::matcher::v3::Matcher* filter_chain_matcher,
       absl::Span<const envoy::config::listener::v3::FilterChain* const> filter_chain_span,

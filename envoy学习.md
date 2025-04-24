@@ -346,18 +346,6 @@ source/extensions/filters/network/
 ### 源码解析
 
 #### 启动流程:
-/envoy/source/exe/main.cc              - int main(int argc, char** argv)
-|_ /envoy/source/exe/main_common.cc     - bool MainCommonBase::run()  [class MainCommonBase : public StrippedMainBase]
-   |_   /envoy/source/exe/main_common.cc 先构造 MainCommonBase           - MainCommonBase::MainCommonBase 
-   |    |_   createFunction 函数在 init 里面被调用 - init(...,  createFunction()); 
-   |       |_   /envoy/source/exe/main_common.cc 创建 Server::InstanceImpl    - server = std::make_unique<Server::InstanceImpl>    [InstanceImpl : public InstanceBase ]
-   |       |_   /envoy/source/exe/main_common.cc server 初始化  server->initialize   
-   |           |_ /envoysource/server/server.cc void InstanceBase::initialize -> InstanceBase::initializeOrThrow
-   |_  启动 执行run()函数
-
-
-
-
 0. 主入口
 ```mermaid
 sequenceDiagram
@@ -368,6 +356,7 @@ sequenceDiagram
    main_common.cc->>+main_common.cc: MainCommonBase::MainCommonBase 构造和初始化
    main_common.cc->>+main_common.cc: MainCommonBase::run() 运行
 ```
+
 
 1. 服务器初始化阶段 **所有代码均以 source/ 为根目录**
 ```mermaid
@@ -385,12 +374,13 @@ sequenceDiagram
    server.cc-->>server.cc: InstanceBase::initializeOrThrow
    server.cc-->>listener_manager_impl.cc:  createListenerManager 初始化ListenerManager, <br/>传进去的 servir 是 InstanceBase 
    listener_manager_impl.cc->>worker_impl.cc : ProdWorkerFactory::createWorker <br/>创建worker
-   server.cc-->>configuration_impl.cc: MainImpl::initialize
+   server.cc-->>configuration_impl.cc: MainImpl::initialize <br/>这里面会加载配置 <br/>filter_chains 在listener下
    configuration_impl.cc-->>listener_manager_impl.cc: ListenerManagerImpl::addOrUpdateListener
    listener_manager_impl.cc-->>listener_manager_impl.cc: ListenerManagerImpl::addOrUpdateListenerInternal
    listener_manager_impl.cc-->>listener_impl.cc: ListenerImpl::newListenerWithFilterChain
-   listener_impl.cc-->>listener_impl.cc: ListenerImpl::ListenerImpl(ListenerImpl& origin,...) <br/>构造ListenerImpl
+   listener_impl.cc-->>listener_impl.cc: ListenerImpl::ListenerImpl(ListenerImpl& origin,...) <br/>构造ListenerImpl <br/>filter_chains
 ```
+
 
 2. 服务器启动和监听器构建阶段 **所有代码均以 source/ 为根目录**
 ```mermaid
@@ -422,6 +412,7 @@ sequenceDiagram
 
 ```
 
+
 2.1 创建文件描述符(套接字) **所有代码均以 source/ 为根目录**
 ```mermaid
 sequenceDiagram
@@ -434,6 +425,7 @@ sequenceDiagram
    io_socket_handle_impl.cc->>dispatcher_impl.cc: DispatcherImpl::createFileEvent 
    dispatcher_impl.cc->>file_event_impl.cc: FileEventImpl::FileEventImpl <br/>创建文件描述符(套接字),  <br/>底层基于libevent 的 event_assign和event_add  
 ```
+
 
 2.2 启动监听 **所有代码均以 source/ 为根目录**
 ```mermaid
@@ -449,7 +441,7 @@ sequenceDiagram
 ```
 
 
-3. 处理请求阶段 http连接建立
+3. 处理请求阶段 http连接建立 **所有代码均以 source/ 为根目录**
 ```mermaid
 sequenceDiagram
    participant active_tcp_listener.cc as common/listener_manager/active_tcp_listener.cc
@@ -458,7 +450,7 @@ sequenceDiagram
    participant active_tcp_socket.cc as common/listener_manager/active_tcp_socket.cc
    participant dispatcher_impl.cc as common/event/dispatcher_impl.cc
 
-   tcp_listener_impl.cc->>active_tcp_listener.cc: ActiveTcpListener::onAccept <br/>由请求过来时[TcpListenerImpl::onSocketEvent 调用到这]
+   tcp_listener_impl.cc->>active_tcp_listener.cc: ActiveTcpListener::onAccept <br/>由请求过来时[TcpListenerImpl::onSocketEvent 调用到这 cb_.onAccept] <br/>cb_ 是 ActiveTcpListener
    active_tcp_listener.cc->>active_tcp_listener.cc: ActiveTcpListener::onAcceptWorker
    active_tcp_listener.cc->>active_stream_listener_base.cc: onSocketAccepted(std::unique_ptr<ActiveTcpSocket> active_socket) <br/>继承关系 class ActiveTcpListener: public OwnedActiveStreamListenerBase <br/>public OwnedActiveStreamListenerBase: public ActiveStreamListenerBase
    active_stream_listener_base.cc->>active_tcp_socket.cc: startFilterChain=><br/>ActiveTcpSocket::continueFilterChain
@@ -468,8 +460,7 @@ sequenceDiagram
 ```
 
 
-
-4. 处理请求阶段 请求数据获取
+4. 处理请求阶段 请求数据获取 **所有代码均以 source/ 为根目录**
 ```mermaid
 sequenceDiagram
    participant active_tcp_listener.cc as common/listener_manager/active_tcp_listener.cc
@@ -496,18 +487,17 @@ sequenceDiagram
 ```
 
 
-
-5. 处理请求阶段 读就绪事件
+5. 处理请求阶段 读就绪事件 **所有代码均以 source/ 为根目录**
 ```mermaid
 sequenceDiagram
    participant connection_impl.cc as common/network/connection_impl.cc
-   participant filter_manager_impl.cc as source/common/network/filter_manager_impl.cc
-   participant conn_manager_impl.cc as source/common/http/conn_manager_impl.cc
-   participant http_connection_manager.cc as source/extensions/filters/network/http_connection_manager/config.cc
-   participant codec_impl.cc as source/common/http/http1/codec_impl.cc
-   participant legacy_parser_impl.cc as source/common/http/http1/legacy_parser_impl.cc
-   participant raw_buffer_socket.cc as source/common/network/raw_buffer_socket.cc
-   participant io_socket_handle_impl.cc as source/common/network/io_socket_handle_impl.cc
+   participant filter_manager_impl.cc as common/network/filter_manager_impl.cc
+   participant conn_manager_impl.cc as common/http/conn_manager_impl.cc
+   participant http_connection_manager.cc as extensions/filters/network/http_connection_manager/config.cc
+   participant codec_impl.cc as common/http/http1/codec_impl.cc
+   participant legacy_parser_impl.cc as common/http/http1/legacy_parser_impl.cc
+   participant raw_buffer_socket.cc as common/network/raw_buffer_socket.cc
+   participant io_socket_handle_impl.cc as common/network/io_socket_handle_impl.cc
 
    connection_impl.cc->>connection_impl.cc: ConnectionImpl::onReadReady() <br/>调用 onReadReady 方法处理读就绪事件
    rect grey
@@ -526,7 +516,5 @@ sequenceDiagram
    end
    connection_impl.cc->>raw_buffer_socket.cc: RawBufferSocket::doRead
    raw_buffer_socket.cc->>io_socket_handle_impl.cc: IoSocketHandleImpl::read <br/>进行 readv 的系统调用
-   
-
 ```
 

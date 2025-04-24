@@ -11,6 +11,7 @@
 using envoy::extensions::filters::http::hyperscan_scanner::v3::HyperscanScannerConfig;
 using envoy::extensions::filters::http::hyperscan_scanner::v3::Pattern;
 
+
 namespace Envoy {
 namespace Extensions {
 namespace HttpFilters {
@@ -21,6 +22,7 @@ class HyperscanFilter : public Http::StreamFilter,
 public:
     HyperscanFilter(const HyperscanScannerConfig& config);
     ~HyperscanFilter();
+
 
 
     void onDestroy() override {}
@@ -95,6 +97,7 @@ private:
 
     // 从配置加载的规则
     std::vector<Pattern> patterns_;
+    
 }; // class HyperscanFilter
 
 

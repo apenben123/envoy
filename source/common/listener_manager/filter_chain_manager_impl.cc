@@ -135,6 +135,7 @@ absl::Status FilterChainManagerImpl::addFilterChains(
   uint32_t new_filter_chain_size = 0;
   FilterChainsByName filter_chains_by_name;
 
+  // 挨个添加过滤器
   for (const auto& filter_chain : filter_chain_span) {
     const auto& filter_chain_match = filter_chain->filter_chain_match();
     if (!filter_chain_match.address_suffix().empty() || filter_chain_match.has_suffix_len()) {
